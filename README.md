@@ -25,7 +25,27 @@ skill-name/
 
 ## Enthaltene Skills
 
-*(Wird ergänzt, wenn Skills hinzugefügt werden)*
+### [bexio](bexio/)
+
+Abfrage von Kundenrechnungen und Finanzdaten über die Bexio-Integration des CudosControlling Tools. Ermöglicht den Zugriff auf Rechnungen im Format `#XXXX.YYY.ZZ.VV`.
+
+**Trigger:** „Rechnung", „Zeige Rechnung", „Bexio", „bills"
+
+---
+
+### [rolx](rolx/)
+
+Zeiterfassung und Projektstunden aller Cudos-Mitarbeitenden via RolX-Integration. Unterstützt Abfragen nach Mitarbeiter, Projekt oder Zeitraum.
+
+**Trigger:** Fragen über Projektstunden, Zeiterfassungsdaten, Arbeitsstunden oder „RolX"
+
+---
+
+### [rechnungskontrolle](rechnungskontrolle/)
+
+Vollständige Rechnungskontrolle durch Abgleich von Bexio-Rechnungen mit den in RolX erfassten Arbeitsstunden. Kombiniert die Skills `bexio` und `rolx`.
+
+**Trigger:** „Rechnung prüfen", „Rechnung kontrollieren", „Rechnung gegen Stunden abgleichen", „Rechnungsabstimmung", invoice reconciliation
 
 ---
 
