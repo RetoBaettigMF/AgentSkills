@@ -49,4 +49,36 @@ Vollständige Rechnungskontrolle durch Abgleich von Bexio-Rechnungen mit den in 
 
 ---
 
+### [crm](crm/)
+
+Abfrage von Kontakten, Firmen, Verkaufschancen und Kommentaren aus berliCRM via REST API. Unterstützt Suche, Detailabfragen und direkte SQL-ähnliche Queries.
+
+**Trigger:** CRM-Daten, Kundenkontakte, Accounts, Potentials, Kommentare, direkte CRM-Abfragen
+
+---
+
+### [moneyhouse](moneyhouse/)
+
+Automatisiertes Auslesen von Firmeninformationen von moneyhouse.ch via Browser-Automatisierung und LLM-basierter Datenextraktion. Liefert strukturierte JSON-Daten zu Schweizer Unternehmen.
+
+**Trigger:** Firmendetails, Handelsregisterinformationen, Mitarbeiterzahlen, Zeichnungsberechtigte, Rechtsformen
+
+---
+
+### [web-publish](web-publish/)
+
+Publiziert Dateien und Verzeichnisse auf `https://baettig.org/morticia/` via SSH/SCP/rsync. Unterstützt Einzeldateien, Verzeichnis-Sync und automatische Index-Erstellung.
+
+**Trigger:** „publizieren", „veröffentlichen", „online stellen", „auf baettig.org hochladen", „publish"
+
+---
+
+### [youtube-download](youtube-download/)
+
+Lädt YouTube-Videos als MP3-Audiodateien herunter (192 kbps) via `yt-dlp` und `ffmpeg`. Optional mit Upload auf Google Drive.
+
+**Trigger:** YouTube-Video als Audio, MP3 aus YouTube, YouTube-Link in Musik umwandeln
+
+---
+
 Weitere Informationen zum AgentSkills-Standard findest du unter: https://agentskills.io/

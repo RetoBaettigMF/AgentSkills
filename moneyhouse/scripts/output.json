@@ -1,0 +1,99 @@
+{
+  "search_term": "Cudos AG",
+  "results_count": 2,
+  "companies": [
+    {
+      "Firmenname": "Cudos AG",
+      "Strasse": "Querstrasse",
+      "Hausnummer": "17",
+      "Postleitzahl": 8951,
+      "Ort": "Fahrweid",
+      "AnzahlMitarbeitende": 35,
+      "Umsatz": null,
+      "Zeichnungsberechtigte": [
+        {
+          "Vorname": "Roger",
+          "Name": "Notter",
+          "Funktion": "VR"
+        },
+        {
+          "Vorname": "Dr. Markus",
+          "Name": "Schenkel",
+          "Funktion": "VR"
+        },
+        {
+          "Vorname": "Daniel Thomas",
+          "Name": "Mettler",
+          "Funktion": "VR"
+        },
+        {
+          "Vorname": "Rachel",
+          "Name": "Blaser",
+          "Funktion": "GL"
+        },
+        {
+          "Vorname": "Riccardo",
+          "Name": "Gubser",
+          "Funktion": "GL"
+        },
+        {
+          "Vorname": "Sibylle",
+          "Name": "Jungen-Rellstab",
+          "Funktion": "GL"
+        },
+        {
+          "Vorname": "Reto",
+          "Name": "Bättig",
+          "Funktion": "GL"
+        },
+        {
+          "Vorname": "Rachel",
+          "Name": "Blaser",
+          "Funktion": "Zeichnungsberechtigt"
+        },
+        {
+          "Vorname": "Riccardo",
+          "Name": "Gubser",
+          "Funktion": "Zeichnungsberechtigt"
+        },
+        {
+          "Vorname": "Sibylle",
+          "Name": "Jungen-Rellstab",
+          "Funktion": "Zeichnungsberechtigt"
+        },
+        {
+          "Vorname": "Roger",
+          "Name": "Notter",
+          "Funktion": "Zeichnungsberechtigt"
+        },
+        {
+          "Vorname": "Adrian",
+          "Name": "Kohlbrenner",
+          "Funktion": "Zeichnungsberechtigt"
+        }
+      ],
+      "Rechtsform": "Aktiengesellschaft",
+      "MWSTNr": "CHE-100.618.212",
+      "Branche": "Erbringen von IT-Dienstleistungen",
+      "Firmenzweck": "Die Gesellschaft bezweckt die Entwicklung, die Herstellung und den Vertrieb von technischen Lösungen. Dies umfasst die Entwicklung und Implementierung von Softwarelösungen, die Bereitstellung von Hardwarekomponenten sowie die Erbringung von Beratungs- und Supportdienstleistungen sowie weiteren Dienstleistungen im Bereich der technischen Lösungen. Die Gesellschaft kann dabei sowohl eigene Produkte und Dienstleistungen entwickeln als auch als Vertriebspartner für andere Unternehmen tätig sein. Die Gesellschaft kann Zweigniederlassungen und Tochtergesellschaften im In- und Ausland errichten und sich an anderen Unternehmen im In- und Ausland beteiligen sowie alle Geschäfte tätigen, die direkt oder indirekt mit ihrem Zweck in Zusammenhang stehen. Die Gesellschaft kann im In- und Ausland Grundeigentum erwerben, belasten, veräussern und verwalten. Die Gesellschaft kann Lizenzen und Patente erteilen und erwerben, verwerten und veräussern. Sie kann auch Finanzierungen für eigene oder fremde Rechnung vornehmen sowie Garantien und Bürgschaften für Tochtergesellschaften und Dritte eingehen.",
+      "ListeZweigniederlassungen": [
+        "Cudos AG, Zweigniederlassung Chur"
+      ]
+    },
+    {
+      "Firmenname": "Cudos AG, Zweigniederlassung Chur",
+      "Strasse": "Poststrasse",
+      "Hausnummer": "43",
+      "Postleitzahl": 7000,
+      "Ort": "Chur",
+      "AnzahlMitarbeitende": null,
+      "Umsatz": null,
+      "Zeichnungsberechtigte": [],
+      "Rechtsform": "Zweigniederlassung mit Hauptsitz in CH",
+      "MWSTNr": "CHE-155.852.094",
+      "Branche": "Erbringen von IT-Dienstleistungen",
+      "Firmenzweck": "Die Gesellschaft bezweckt den Handel mit sowie die Entwicklung, Herstellung und der Vertrieb von technisch und qualitativ hochwertigen Erzeugnissen aus den Gebieten der technischen Physik und der Computerwissenschaft. Die Gesellschaft kann Zweigniederlassungen und Tochtergesellschaften im In- und Ausland errichten, andere Unternehmen im In- und Ausland erwerben, errichten oder sich daran beteiligen sowie alle Geschäfte tätigen, die direkt oder indirekt mit ihrem Zweck in Zusammenhang stehen. Die Gesellschaft kann im In- und Ausland Grundeigentum erwerben, belasten, veräussern, pachten, verpachten und verwalten. Die Gesellschaft kann Lizenzen und Patente erteilen und erwerben, verwerten und veräussern. Sie kann auch Finanzierungen für eigene oder fremde Rechnung vornehmen sowie Garantien und Bürgschaften für Tochtergesellschaften und Dritte eingehen.",
+      "ListeZweigniederlassungen": []
+    }
+  ]
+}
