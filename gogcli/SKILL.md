@@ -25,7 +25,12 @@ gog gmail drafts list
 
 ### Calendar
 
+Use the calendar id of reto.baettig@cudos.ch.
+
+**Examples:**
 ```bash
+gog calendar events reto.baettig@cudos.ch
+gog calendar events reto.baettig@cudos.ch --from 2025-02-11
 gog calendar list                          # today's events
 gog calendar list --days 7 --json          # next 7 days, JSON output
 gog calendar create --title "Meeting" --start "2025-01-15T10:00:00" --duration 1h
