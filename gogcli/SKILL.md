@@ -31,10 +31,8 @@ Use the calendar id of reto.baettig@cudos.ch.
 ```bash
 gog calendar events reto.baettig@cudos.ch
 gog calendar events reto.baettig@cudos.ch --from 2025-02-11
-gog calendar list                          # today's events
-gog calendar list --days 7 --json          # next 7 days, JSON output
-gog calendar create --title "Meeting" --start "2025-01-15T10:00:00" --duration 1h
-gog calendar delete <eventId>
+gog calendar list reto.baettig@cudos.ch                 # today's events
+gog calendar list reto.baettig@cudos.ch --days 7 --json # next 7 days, JSON output
 gog calendar freebusy --emails "a@co.com,b@co.com" --days 3
 ```
 
