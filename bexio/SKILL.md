@@ -11,8 +11,6 @@ Kundenrechnungen und Finanzdaten für Cudos AG via das Bexio Modul des CudosCont
 
 **Script:** `scripts/cudos_controlling`
 
-Das Script verwendet `uv run` (kein venv nötig).
-
 ## Verwendung
 
 ### Rechnungen abfragen
