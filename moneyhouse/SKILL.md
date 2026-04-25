@@ -20,20 +20,20 @@ OPENROUTER_API_KEY=sk-or-...
 ## Verwendung
 
 ```bash
-scripts/moneyhouse.py "<Firmenname>" [Optionen]
+scripts/moneyhouse "<Firmenname>" [Optionen]
 ```
 
 ## Beispiele
 
 ```bash
 # Grundlegende Suche (Browser sichtbar)
-scripts/moneyhouse.py "Cudos AG"
+scripts/moneyhouse "Cudos AG"
 
 # Headless-Modus (Browser im Hintergrund)
-scripts/moneyhouse.py "Muster AG" --headless
+scripts/moneyhouse "Muster AG" --headless
 
 # Ausgabe in eigene Datei
-scripts/moneyhouse.py "Cudos AG" -o cudos.json
+scripts/moneyhouse "Cudos AG" -o cudos.json
 ```
 
 ## Parameter

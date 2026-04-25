@@ -16,7 +16,7 @@ API key muss in `./scripts/.env` als `MBTOOLS_API_KEY` gesetzt sein (siehe `.env
 ### Stunden abfragen
 
 ```bash
-scripts/cudos_controlling.py rolx "<Natürlichsprachige Anfrage>"
+scripts/cudos_controlling rolx "<Natürlichsprachige Anfrage>"
 ```
 
 **Projektnummern-Format:**
@@ -27,13 +27,13 @@ scripts/cudos_controlling.py rolx "<Natürlichsprachige Anfrage>"
 
 ### Mitarbeiter-Stunden
 ```bash
-scripts/cudos_controlling.py rolx "Wie viele Stunden hat Reto gearbeitet in Januar 2025?"
+scripts/cudos_controlling rolx "Wie viele Stunden hat Reto gearbeitet in Januar 2025?"
 ```
 
 ### Projektbasierte Abfragen
 ```bash
-scripts/cudos_controlling.py rolx "Show all hours for project 0123.110"
-scripts/cudos_controlling.py rolx "Gib mir alle Stunden für Projekt #0123.002 im Februar 2026"
-scripts/cudos_controlling.py rolx "Zeige alle Stunden pro Aufgabe für Projekt 0123.002 im Januar 2026"
+scripts/cudos_controlling rolx "Show all hours for project 0123.110"
+scripts/cudos_controlling rolx "Gib mir alle Stunden für Projekt #0123.002 im Februar 2026"
+scripts/cudos_controlling rolx "Zeige alle Stunden pro Aufgabe für Projekt 0123.002 im Januar 2026"
 ```
 

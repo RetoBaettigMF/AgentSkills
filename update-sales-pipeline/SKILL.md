@@ -5,11 +5,11 @@ description: Führe den Sales-Report aus und aktualisiere das Google Sheet mit d
 
 # Update Sales Pipeline
 
-Aktualisiert die Sales-Pipeline via sales_report.py und informiert das Team.
+Aktualisiert die Sales-Pipeline via sales_report und informiert das Team.
 
 ## Vorgehen
 
-1. Führe den Sales-Report in scripts/sales_report.py aus
+1. Führe den Sales-Report in scripts/sales_report aus
 
 3. Das Script ergänzt folgendes Google Sheet:
    https://docs.google.com/spreadsheets/d/1ZpOfJDWRGm61MqUOgch6n4B0Ziia5ShbH1STlF18d1k

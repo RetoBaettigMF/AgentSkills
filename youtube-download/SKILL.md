@@ -14,17 +14,17 @@ ffmpeg muss installiert sein (apt install ffmpeg / brew install ffmpeg)
 ## Verwendung
 
 ```bash
-scripts/yt2mp3.py <youtube-url> [ausgabe-verzeichnis]
+scripts/yt2mp3 <youtube-url> [ausgabe-verzeichnis]
 ```
 
 ## Beispiele
 
 ```bash
 # In aktuelles Verzeichnis herunterladen
-scripts/yt2mp3.py "https://www.youtube.com/watch?v=..."
+scripts/yt2mp3 "https://www.youtube.com/watch?v=..."
 
 # In bestimmtes Verzeichnis
-scripts/yt2mp3.py "https://www.youtube.com/watch?v=..." ~/Music
+scripts/yt2mp3 "https://www.youtube.com/watch?v=..." ~/Music
 ```
 
 Das Script lädt die beste verfügbare Audioqualität herunter und konvertiert sie zu MP3 (192 kbps). Der Dateiname entspricht dem Video-Titel: `<video-titel>.mp3`

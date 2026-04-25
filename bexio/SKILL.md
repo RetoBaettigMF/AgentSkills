@@ -9,7 +9,7 @@ Kundenrechnungen und Finanzdaten für Cudos AG via das Bexio Modul des CudosCont
 
 ## Verzeichnis
 
-**Script:** `scripts/cudos_controlling.py`
+**Script:** `scripts/cudos_controlling`
 
 Das Script verwendet `uv run` (kein venv nötig).
 
@@ -18,7 +18,7 @@ Das Script verwendet `uv run` (kein venv nötig).
 ### Rechnungen abfragen
 
 ```bash
-scripts/cudos_controlling.py bexio "<Natürlichsprachige Anfrage>"
+scripts/cudos_controlling bexio "<Natürlichsprachige Anfrage>"
 ```
 
 **Rechnungsnummern-Format:**
@@ -29,7 +29,7 @@ scripts/cudos_controlling.py bexio "<Natürlichsprachige Anfrage>"
 
 ### Einzelne Rechnung abfragen
 ```bash
-scripts/cudos_controlling.py bexio "Zeige Rechnung #0290.001.01.01"
-scripts/cudos_controlling.py bexio "Rechnung #3771"
-scripts/cudos_controlling.py bexio "gib mir die Rechnung #0158.003.01.01"
+scripts/cudos_controlling bexio "Zeige Rechnung #0290.001.01.01"
+scripts/cudos_controlling bexio "Rechnung #3771"
+scripts/cudos_controlling bexio "gib mir die Rechnung #0158.003.01.01"
 ```
