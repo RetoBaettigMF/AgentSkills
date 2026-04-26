@@ -1,0 +1,79 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.8"
+# dependencies = [
+#   "openai",
+#   "python-dotenv",
+# ]
+# ///
+"""Transcribe audio files using OpenAI Whisper API."""
+
+import argparse
+import os
+import sys
+from pathlib import Path
+
+from dotenv import load_dotenv
+from openai import OpenAI
+
+script_dir = Path(__file__).resolve().parent
+load_dotenv(script_dir / ".env")
+
+
+def transcribe_audio(audio_path: str, api_key: str = None, language: str = None, model: str = "whisper-1") -> str:
+    key = api_key or os.environ.get("OPENAI_API_KEY")
+    if not key:
+        raise ValueError("OpenAI API key required. Provide via --api-key or set OPENAI_API_KEY environment variable.")
+
+    path = Path(audio_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Audio file not found: {audio_path}")
+
+    valid_extensions = {'.mp3', '.wav', '.m4a', '.flac', '.ogg', '.webm', '.mp4', '.mpeg', '.mpga', '.oga'}
+    ext = path.suffix.lower()
+    if ext not in valid_extensions:
+        print(f"Warning: File extension '{ext}' may not be supported. Supported: {', '.join(valid_extensions)}")
+
+    client = OpenAI(api_key=key)
+
+    with open(path, "rb") as audio_file:
+        params = {"model": model, "file": audio_file}
+        if language:
+            params["language"] = language
+        transcript = client.audio.transcriptions.create(**params)
+
+    return transcript.text
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Transcribe audio files using OpenAI Whisper API",
+        epilog="""
+Examples:
+  transcribe audio.mp3
+  transcribe recording.wav --language de
+  transcribe voice.mp3 --api-key sk-xxx
+        """
+    )
+    parser.add_argument("audio_file", help="Path to the audio file (MP3, WAV, etc.)")
+    parser.add_argument("--api-key", help="OpenAI API key (or set OPENAI_API_KEY env var)")
+    parser.add_argument("--language", help="Language code (e.g., 'de' for German, 'en' for English)")
+    parser.add_argument("--model", default="whisper-1", help="Model to use (default: whisper-1)")
+
+    args = parser.parse_args()
+
+    try:
+        result = transcribe_audio(
+            audio_path=args.audio_file,
+            api_key=args.api_key,
+            language=args.language,
+            model=args.model,
+        )
+        print(result)
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
