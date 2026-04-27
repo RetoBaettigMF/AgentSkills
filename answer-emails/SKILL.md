@@ -25,7 +25,7 @@ Gehe folgendermassen vor:
 - Mache eine Feinklassifizierung der Email gemäss der Liste im nächsten Kapitel
 - Hole dir die Anweisungen für die Beantwortung gemäss der Feinklassifizierung und der Liste im übernächsten Kapitel
 - Formuliere eine Antwort an die Email in der detektierten Sprache gemäss den Anweisungen für die entsprechende Feinklassifizierung
-- Füge die folgende Fusszeile an: "Diese Email wurde von meinem AI Bot beantwortet. Bitte antworten sie nicht auf diese Email, sondern bei Bedarf wieder an mich."
+- Füge die folgende Fusszeile an (in die richtige Sprache übersetzt): "Diese Email wurde von meinem AI Bot beantwortet. Bitte antworten sie nicht auf diese Email, sondern bei Bedarf wieder an mich."
 - Sende die Email als "Reply" mit Zitat der originalen Nachricht an die entsprechende Adresse und sende ein CC an reto.baettig@cudos.ch
 - Markiere die Email als gelesen, füge das Tag "Erledigt" hinzu und archiviere sie folgendermassen:
   1) Erst aus INBOX entfernen (wichtig: separater Befehl!): gog gmail thread modify <threadId> --remove INBOX --account bar.ai.bot@cudos.ch
@@ -48,8 +48,11 @@ Gehe folgendermassen vor:
 Sende je nach Klasse eine freundliche Antwort mit dem beschriebenen Grundinhalt an die originalen Absender der Email und ein CC an reto.baettig@cudos.ch.
 Führe danach noch die weiteren Aktionen nach Klasse aus (siehe separates Unterkapitel dazu)!
 
+**Wichtig:** Erkenne die Sprache der Originalnachricht. Übersetzte am Schluss die Antwort in diese Sprache (Sprache der Originalnachricht) vor dem Versenden.
+
 - **Marketing**: Wir haben bereits bestehende Partner und eine eigene Organisation für das Marketing und den Verkauf und sind nicht an ihren Dienstleistungen interessiert.
-- **Bewerbung**: Bitte senden Sie ihre Bewerbung an jobs@cudos.ch
+- **Bewerbung (Deutsch)**: Bitte senden Sie ihre Bewerbung an jobs@cudos.ch.
+- **Bewerbung (Andere Sprache)**: Please submit your application to jobs@cudos.ch, where our HR team will review it. Please note that we require German language skills at C1 level for a successful application.
 - **Personalvermittler**: Wir haben preferred Partner für die Personalsuche und sind im Moment nicht auf der Suche nach weiteren Partnern. 
 - **Shoring**: Wir haben kein Interesse an ihren Dienstleistungen, da wir eigene Entwickler in der Schweiz haben und nur lokale Dienstleistungen erbringen wollen.
 - **M&A**: Wir sind in den lezten Jahren organisch von 15 auf über 60 Mitarbeitende gewachsen und planen, auf diese Art bis auf mindestens 100 Mitarbeitende weiter zu wachsen, bevor wir weitere Optionen anschauen.
@@ -62,10 +65,6 @@ Führe danach noch die weiteren Aktionen nach Klasse aus (siehe separates Unterk
   `gog sheets append 1D6Cdci6qZXtjFNnQLPBUz5xKWel_wZIo30J87kiHRUc 'Investors!A:D' 'Datetime|Sender|Message|Answer'`
 
 ## Verarbeitung von Emails der Klasse 2 (Aufträge und Antworten von Reto auf deine Nachrichten an ihn)
-Überlege zuerst, ob der Auftrag ein "Standardauftrag" ist, für welchen bereits ein Tool in /home/reto/.openclaw/workspace/TOOLS.md existiert.
-Insbesondere sind für folgende Aufträge detaillierte Prompts in /home/reto/.openclaw/workspace/prompts vorhanden, die du ausführen kannst:
-- Generate Weekly Report → /home/reto/.openclaw/workspace/prompts/WeeklyReportPrompt.md
-- Send Cudos Trail (CT) Profiles → /home/reto/.openclaw/workspace/prompts/CudosTrailProfile.md
-- Check Invoices → Check TOOLS.md for instructions
+Überlege zuerst, ob der Auftrag ein "Standardauftrag" ist, für welcher bereits ein bestehender Skill oder ein bestehendes Tool existiert.
 
 Versuche den Auftrag so gut wie möglich auszuführen und melde den Fortschritt per Email an reto.baettig@cudos.ch und an den aktiven Telegram Kanal von Reto.
