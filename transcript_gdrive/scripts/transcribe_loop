@@ -1,0 +1,20 @@
+#!/bin/bash
+
+# Runs transcribe_once every 60 seconds. Designed to run as a systemd service.
+
+LOG_TAG="transcript-gdrive"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') $*"
+    logger -t "$LOG_TAG" "$*"
+}
+
+log "Service started"
+
+while true; do
+    log "Checking for new audio files..."
+    "$SCRIPT_DIR/transcribe_once"
+    log "Check complete. Sleeping 60s."
+    sleep 60
+done

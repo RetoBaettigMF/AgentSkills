@@ -1,0 +1,44 @@
+#!/bin/bash
+set -euo pipefail
+
+PARENT_FOLDER="1dTribE31RQ7bCvQ4_r3eZ9Y2O5rXsyUJ"
+PROGRESS_FOLDER="10PoANPn2XmjbJSOQrS63COWzzixXS1eL"
+DONE_FOLDER="1ky0E9E8Cn242tFOOX5atOOzVh2528p5e"
+WHISPER="/home/reto/Development/AgentSkills/whisper/scripts/transcribe"
+WORK_DIR=$(mktemp -d)
+
+trap "rm -rf '$WORK_DIR'" EXIT
+
+processed=0
+
+while IFS=$'\t' read -r file_id file_name; do
+    [[ -z "$file_id" ]] && continue
+    echo "Processing: $file_name"
+
+    # Mark as in-progress (prevents re-processing if script is interrupted mid-run)
+    gog -y drive move "$file_id" --parent "$PROGRESS_FOLDER"
+
+    # Download locally to tmp dir
+    local_audio="$WORK_DIR/$file_name"
+    gog drive download "$file_id" --out "$local_audio"
+
+    # Transcribe with whisper
+    base="${file_name%.*}"
+    transcript="$WORK_DIR/${base}.txt"
+    "$WHISPER" "$local_audio" > "$transcript"
+    echo "Transcribed: $base.txt"
+
+    # Upload transcript to done/
+    gog -y drive upload "$transcript" --parent "$DONE_FOLDER"
+
+    # Move audio file to done/
+    gog -y drive move "$file_id" --parent "$DONE_FOLDER"
+
+    echo "Completed: $file_name"
+    ((processed++))
+done < <(
+    gog -j drive ls --parent "$PARENT_FOLDER" --max 100 \
+    | jq -r '.files[] | select(.mimeType | startswith("audio/")) | "\(.id)\t\(.name)"'
+)
+
+echo "Processed $processed file(s)."
