@@ -1,44 +1,107 @@
 #!/bin/bash
-set -euo pipefail
+set -uo pipefail
 
 PARENT_FOLDER="1dTribE31RQ7bCvQ4_r3eZ9Y2O5rXsyUJ"
 PROGRESS_FOLDER="10PoANPn2XmjbJSOQrS63COWzzixXS1eL"
 DONE_FOLDER="1ky0E9E8Cn242tFOOX5atOOzVh2528p5e"
 WHISPER="/home/reto/Development/AgentSkills/whisper/scripts/transcribe"
 WORK_DIR=$(mktemp -d)
+LOG_TAG="transcript-gdrive"
 
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') $*"
+    logger -t "$LOG_TAG" "$*"
+}
+
+log_error() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ERROR: $*" >&2
+    logger -t "$LOG_TAG" "ERROR: $*"
+}
+
+trap 'log_error "Script exited unexpectedly at line $LINENO (exit code $?)"' ERR
 trap "rm -rf '$WORK_DIR'" EXIT
 
 processed=0
+errors=0
+
+log "Listing audio files in inbox..."
+listing_output=$(gog -j drive ls --parent "$PARENT_FOLDER" --max 100 2>&1)
+listing_exit=$?
+if [[ $listing_exit -ne 0 ]]; then
+    log_error "gog drive ls failed (exit $listing_exit): $listing_output"
+    exit 1
+fi
+
+file_count=$(echo "$listing_output" | jq -r '[.files[] | select(.mimeType | startswith("audio/"))] | length')
+log "Found $file_count audio file(s) in inbox."
 
 while IFS=$'\t' read -r file_id file_name; do
     [[ -z "$file_id" ]] && continue
-    echo "Processing: $file_name"
+    log "Processing: $file_name (id=$file_id)"
 
     # Mark as in-progress (prevents re-processing if script is interrupted mid-run)
-    gog -y drive move "$file_id" --parent "$PROGRESS_FOLDER"
+    if ! gog -y drive move "$file_id" --parent "$PROGRESS_FOLDER" 2>&1 | { read out; log "Moved to progress: $out"; true; }; then
+        log_error "Failed to move '$file_name' to progress folder"
+        ((errors++))
+        continue
+    fi
+    log "Moved '$file_name' to progress folder."
 
     # Download locally to tmp dir
     local_audio="$WORK_DIR/$file_name"
-    gog drive download "$file_id" --out "$local_audio"
+    log "Downloading '$file_name' to $local_audio..."
+    if ! gog drive download "$file_id" --out "$local_audio" 2>&1; then
+        log_error "Failed to download '$file_name' (id=$file_id)"
+        ((errors++))
+        continue
+    fi
+
+    if [[ ! -f "$local_audio" ]]; then
+        log_error "Download appeared to succeed but file not found: $local_audio"
+        ((errors++))
+        continue
+    fi
+    file_size=$(stat -c%s "$local_audio" 2>/dev/null || echo "unknown")
+    log "Downloaded '$file_name' (${file_size} bytes)."
 
     # Transcribe with whisper
     base="${file_name%.*}"
     transcript="$WORK_DIR/${base}.txt"
-    "$WHISPER" "$local_audio" > "$transcript"
-    echo "Transcribed: $base.txt"
+    log "Transcribing '$file_name' with whisper..."
+    if ! "$WHISPER" "$local_audio" > "$transcript" 2>&1; then
+        log_error "Whisper transcription failed for '$file_name'"
+        ((errors++))
+        continue
+    fi
+
+    if [[ ! -s "$transcript" ]]; then
+        log_error "Transcript file is empty after whisper ran: $transcript"
+        ((errors++))
+        continue
+    fi
+    transcript_size=$(stat -c%s "$transcript" 2>/dev/null || echo "unknown")
+    log "Transcribed '$file_name' -> '${base}.txt' (${transcript_size} bytes)."
 
     # Upload transcript to done/
-    gog -y drive upload "$transcript" --parent "$DONE_FOLDER"
+    log "Uploading transcript '${base}.txt' to done folder..."
+    if ! gog -y drive upload "$transcript" --parent "$DONE_FOLDER" 2>&1; then
+        log_error "Failed to upload transcript '${base}.txt' to done folder"
+        ((errors++))
+        continue
+    fi
+    log "Uploaded transcript '${base}.txt'."
 
     # Move audio file to done/
-    gog -y drive move "$file_id" --parent "$DONE_FOLDER"
+    log "Moving audio '$file_name' to done folder..."
+    if ! gog -y drive move "$file_id" --parent "$DONE_FOLDER" 2>&1; then
+        log_error "Failed to move audio '$file_name' to done folder"
+        ((errors++))
+        continue
+    fi
 
-    echo "Completed: $file_name"
+    log "Completed: $file_name"
     ((processed++))
-done < <(
-    gog -j drive ls --parent "$PARENT_FOLDER" --max 100 \
-    | jq -r '.files[] | select(.mimeType | startswith("audio/")) | "\(.id)\t\(.name)"'
-)
+done < <(echo "$listing_output" | jq -r '.files[] | select(.mimeType | startswith("audio/")) | "\(.id)\t\(.name)"')
 
-echo "Processed $processed file(s)."
+log "Done. Processed $processed file(s), $errors error(s)."
+[[ $errors -eq 0 ]]

@@ -10,7 +10,9 @@
 
 import argparse
 import os
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -18,6 +20,26 @@ from openai import OpenAI
 
 script_dir = Path(__file__).resolve().parent
 load_dotenv(script_dir / ".env")
+
+MAX_FILE_SIZE = 25 * 1024 * 1024  # 25 MB
+CHUNK_DURATION = 600  # seconds (10 minutes)
+
+
+def split_audio(path: Path, tmp_dir: str) -> list[Path]:
+    """Split audio into chunks using ffmpeg. Returns list of chunk paths."""
+    chunk_pattern = str(Path(tmp_dir) / "chunk_%03d") + path.suffix
+    subprocess.run(
+        [
+            "ffmpeg", "-i", str(path),
+            "-f", "segment", "-segment_time", str(CHUNK_DURATION),
+            "-c", "copy", "-reset_timestamps", "1",
+            chunk_pattern,
+        ],
+        check=True,
+        capture_output=True,
+    )
+    chunks = sorted(Path(tmp_dir).glob(f"chunk_*{path.suffix}"))
+    return chunks
 
 
 def transcribe_audio(audio_path: str, api_key: str = None, language: str = None, model: str = "whisper-1") -> str:
@@ -36,12 +58,23 @@ def transcribe_audio(audio_path: str, api_key: str = None, language: str = None,
 
     client = OpenAI(api_key=key)
 
+    if path.stat().st_size <= MAX_FILE_SIZE:
+        return _transcribe_file(client, path, language, model)
+
+    print(f"File is {path.stat().st_size / 1024 / 1024:.1f} MB, splitting into chunks...", file=sys.stderr)
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        chunks = split_audio(path, tmp_dir)
+        print(f"Transcribing {len(chunks)} chunks...", file=sys.stderr)
+        parts = [_transcribe_file(client, chunk, language, model) for chunk in chunks]
+    return " ".join(parts)
+
+
+def _transcribe_file(client: OpenAI, path: Path, language: str, model: str) -> str:
     with open(path, "rb") as audio_file:
         params = {"model": model, "file": audio_file}
         if language:
             params["language"] = language
         transcript = client.audio.transcriptions.create(**params)
-
     return transcript.text
 
 

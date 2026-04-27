@@ -10,11 +10,14 @@ log() {
     logger -t "$LOG_TAG" "$*"
 }
 
-log "Service started"
+log "Service started (pid=$$)"
 
 while true; do
     log "Checking for new audio files..."
-    "$SCRIPT_DIR/transcribe_once"
-    log "Check complete. Sleeping 60s."
+    if "$SCRIPT_DIR/transcribe_once"; then
+        log "Check complete. Sleeping 60s."
+    else
+        log "transcribe_once exited with error (exit $?). Sleeping 60s."
+    fi
     sleep 60
 done
