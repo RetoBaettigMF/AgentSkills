@@ -13,6 +13,8 @@ API key muss in `./scripts/.env` als `MBTOOLS_API_KEY` gesetzt sein (siehe `.env
 
 ## Verwendung
 
+Wichtig: Das script einfach so ausführen, ohne python3 oder uv!
+
 ### Stunden abfragen
 
 ```bash

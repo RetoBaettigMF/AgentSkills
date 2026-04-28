@@ -13,6 +13,8 @@ Kundenrechnungen und Finanzdaten für Cudos AG via das Bexio Modul des CudosCont
 
 ## Verwendung
 
+Wichtig: Das script einfach so ausführen, ohne python3 oder uv!
+
 ### Rechnungen abfragen
 
 ```bash
