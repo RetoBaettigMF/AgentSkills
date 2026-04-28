@@ -1,9 +1,11 @@
 #!/bin/bash
 
 # Runs transcribe_once every 60 seconds. Designed to run as a systemd service.
+# Exit codes from transcribe_once: 0=work done, 1=error, 2=inbox empty.
 
 LOG_TAG="transcript-gdrive"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ALIVE_INTERVAL=3600
 
 log() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') $*"
@@ -12,12 +14,25 @@ log() {
 
 log "Service started (pid=$$)"
 
+last_alive=0
+
 while true; do
-    log "Checking for new audio files..."
-    if "$SCRIPT_DIR/transcribe_once"; then
-        log "Check complete. Sleeping 60s."
+    "$SCRIPT_DIR/transcribe_once"
+    exit_code=$?
+    now=$(date +%s)
+
+    if [[ $exit_code -eq 2 ]]; then
+        if (( now - last_alive >= ALIVE_INTERVAL )); then
+            log "Alive. Inbox empty, nothing to process."
+            last_alive=$now
+        fi
+    elif [[ $exit_code -eq 0 ]]; then
+        log "Transcription run complete."
+        last_alive=$now
     else
-        log "transcribe_once exited with error (exit $?). Sleeping 60s."
+        log "transcribe_once exited with error (exit $exit_code)."
+        last_alive=$now
     fi
+
     sleep 60
 done

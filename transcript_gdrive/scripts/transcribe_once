@@ -24,7 +24,6 @@ trap "rm -rf '$WORK_DIR'" EXIT
 processed=0
 errors=0
 
-log "Listing audio files in inbox..."
 listing_output=$(gog -j drive ls --parent "$PARENT_FOLDER" --max 100 2>&1)
 listing_exit=$?
 if [[ $listing_exit -ne 0 ]]; then
@@ -33,6 +32,10 @@ if [[ $listing_exit -ne 0 ]]; then
 fi
 
 file_count=$(echo "$listing_output" | jq -r '[.files[] | select(.mimeType | startswith("audio/"))] | length')
+if [[ $file_count -eq 0 ]]; then
+    exit 2  # no work; caller logs an hourly alive message
+fi
+
 log "Found $file_count audio file(s) in inbox."
 
 while IFS=$'\t' read -r file_id file_name; do
