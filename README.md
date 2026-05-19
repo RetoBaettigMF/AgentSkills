@@ -154,3 +154,4 @@ Lädt YouTube-Videos als MP3-Audiodateien herunter (192 kbps) via `yt-dlp` und `
 ---
 
 Weitere Informationen zum AgentSkills-Standard findest du unter: https://agentskills.io/
+
