@@ -1,4 +1,4 @@
-#!/usr/bin/env -S uv run
+#!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.11"
 # dependencies = []
@@ -25,7 +25,7 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 SHEET_ID = "1ZpOfJDWRGm61MqUOgch6n4B0Ziia5ShbH1STlF18d1k"
-CRM_TOOL = Path(__file__).parent.parent.parent / "crm" / "scripts" / "crm.py"
+CRM_TOOL = Path(__file__).parent.parent.parent / "crm" / "scripts" / "crm"
 
 COLUMN_ORDER = [
     "Riccardo Gubser",
