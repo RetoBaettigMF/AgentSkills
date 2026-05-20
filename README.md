@@ -22,6 +22,11 @@ skill-name/
 ├── references/           # Dokumentation für Context-Loading
 └── assets/               # Dateien für Output (Templates, Icons, etc.)
 ```
+## Installation in Agent
+Agents haben oft ein Skills Verzeichnis. Die Skills werden am besten über symbolische Links in diese Verzeichnisse installiert.
+Beispiel für Hermes:
+- Skill-Verzeichnis von Hermes ist `~/.hermes/skills`
+- Installation der Skills mit `ln -s * ~/.hermes/skills`
 
 ## Enthaltene Skills
 
