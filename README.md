@@ -26,7 +26,8 @@ skill-name/
 Agents haben oft ein Skills Verzeichnis. Die Skills werden am besten über symbolische Links in diese Verzeichnisse installiert.
 Beispiel für Hermes:
 - Skill-Verzeichnis von Hermes ist `~/.hermes/skills`
-- Installation der Skills mit `ln -s * ~/.hermes/skills`
+- Checkout the AgentSkills directory and add all the necessary .env files
+- run `/reload-skills`in Hermes
 
 ## Enthaltene Skills
 
