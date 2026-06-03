@@ -39,7 +39,7 @@ SCHEMA_TAB = "_schema"
 SCHEMA_HEADERS = ["table", "column", "type", "pk", "fk_table", "fk_column", "not_null"]
 TYPES = {"int", "float", "str", "bool", "date", "datetime"}
 
-DEFAULT_MAX_RPM = 60
+DEFAULT_MAX_RPM = 50
 DEFAULT_MAX_RETRIES = 3
 RATE_WINDOW_SECONDS = 60.0
 CONFIG_KEYS = {"active_db", "max_requests_per_minute", "max_retries"}

@@ -156,7 +156,7 @@ Stored in `~/.config/gog-db/config.json` alongside `active_db`:
 
 | Key                         | Default | Meaning                                                      |
 |-----------------------------|---------|--------------------------------------------------------------|
-| `max_requests_per_minute`   | `60`    | Max `gog` invocations per 60-second sliding window           |
+| `max_requests_per_minute`   | `50`    | Max `gog` invocations per 60-second sliding window           |
 | `max_retries`               | `3`     | Retry attempts when `gog` returns 429 / `rateLimitExceeded`  |
 
 Set via:
@@ -197,7 +197,7 @@ immediately with the original exit code.
 
 - The cap counts `gog` invocations, not `gog-db` commands. A single `select`
   typically issues 2-3 `gog` calls (schema + table + FK checks). Plan your cap
-  accordingly: if you want ~30 `gog-db` commands per minute, leave the cap at 60.
+  accordingly: if you want ~25 `gog-db` commands per minute, leave the cap at 50.
 - Google's "write requests per minute per user" is a separate 60 quota. The
   script's single cap covers both, so heavy write loops are slightly over-throttled
   on read but never under-throttled on write.
