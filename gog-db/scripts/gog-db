@@ -1,0 +1,1033 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = []
+# ///
+"""
+gog-db — a small relational-DB-like CLI on top of Google Sheets via the `gog` CLI.
+
+Storage model: one Google Spreadsheet = one database. Tabs:
+  - `_schema`         catalog tab (table, column, type, pk, fk_table, fk_column, not_null)
+  - `<table>` tabs    first row = header, data from row 2
+
+See SKILL.md and references/REFERENCE.md for the full spec.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+from datetime import date, datetime
+from pathlib import Path
+from typing import Any
+
+
+# ---------------------------------------------------------------------------
+# Config
+# ---------------------------------------------------------------------------
+
+CONFIG_DIR = Path(os.path.expanduser("~/.config/gog-db"))
+CONFIG_FILE = CONFIG_DIR / "config.json"
+RATE_FILE = CONFIG_DIR / "rate.json"
+
+SCHEMA_TAB = "_schema"
+SCHEMA_HEADERS = ["table", "column", "type", "pk", "fk_table", "fk_column", "not_null"]
+TYPES = {"int", "float", "str", "bool", "date", "datetime"}
+
+DEFAULT_MAX_RPM = 60
+DEFAULT_MAX_RETRIES = 3
+RATE_WINDOW_SECONDS = 60.0
+CONFIG_KEYS = {"active_db", "max_requests_per_minute", "max_retries"}
+
+_config_cache: dict | None = None
+
+
+def load_config() -> dict:
+    global _config_cache
+    if _config_cache is None:
+        if CONFIG_FILE.exists():
+            _config_cache = json.loads(CONFIG_FILE.read_text())
+        else:
+            _config_cache = {}
+    return _config_cache
+
+
+def save_config(cfg: dict) -> None:
+    global _config_cache
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    CONFIG_FILE.write_text(json.dumps(cfg, indent=2))
+    _config_cache = cfg
+
+
+def get_max_rpm() -> int:
+    try:
+        return max(1, int(load_config().get("max_requests_per_minute", DEFAULT_MAX_RPM)))
+    except (TypeError, ValueError):
+        return DEFAULT_MAX_RPM
+
+
+def get_max_retries() -> int:
+    try:
+        return max(0, int(load_config().get("max_retries", DEFAULT_MAX_RETRIES)))
+    except (TypeError, ValueError):
+        return DEFAULT_MAX_RETRIES
+
+
+def resolve_db(arg_db: str | None) -> str:
+    if arg_db:
+        return arg_db
+    cfg = load_config()
+    db = cfg.get("active_db")
+    if not db:
+        die("No active DB. Run `gog-db use <spreadsheetId>` or pass --db <id>.")
+    return db
+
+
+# ---------------------------------------------------------------------------
+# Errors / output
+# ---------------------------------------------------------------------------
+
+def die(msg: str, code: int = 1) -> None:
+    print(f"gog-db: {msg}", file=sys.stderr)
+    sys.exit(code)
+
+
+def emit(data: Any, as_json: bool = False) -> None:
+    if as_json:
+        json.dump(data, sys.stdout, ensure_ascii=False, default=str)
+        sys.stdout.write("\n")
+    else:
+        if isinstance(data, list):
+            if not data:
+                print("(0 rows)")
+                return
+            cols = list(data[0].keys())
+            widths = {c: max(len(c), *(len(str(r.get(c, ""))) for r in data)) for c in cols}
+            line = " | ".join(c.ljust(widths[c]) for c in cols)
+            print(line)
+            print("-+-".join("-" * widths[c] for c in cols))
+            for r in data:
+                print(" | ".join(str(r.get(c, "")).ljust(widths[c]) for c in cols))
+            print(f"({len(data)} rows)")
+        else:
+            print(data)
+
+
+# ---------------------------------------------------------------------------
+# Rate limiting
+# ---------------------------------------------------------------------------
+
+def _load_window() -> list[float]:
+    if not RATE_FILE.exists():
+        return []
+    try:
+        data = json.loads(RATE_FILE.read_text())
+        return [float(t) for t in data] if isinstance(data, list) else []
+    except (json.JSONDecodeError, ValueError, TypeError):
+        return []
+
+
+def _save_window(window: list[float]) -> None:
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    RATE_FILE.write_text(json.dumps(window))
+
+
+def throttle() -> None:
+    """Block until issuing a new gog call fits under max_requests_per_minute.
+
+    Sliding-window across processes via ~/.config/gog-db/rate.json. Last writer
+    wins on concurrent updates — acceptable for a single-user CLI; the retry
+    path catches any rare overshoot.
+    """
+    max_rpm = get_max_rpm()
+    while True:
+        now = time.time()
+        window = [t for t in _load_window() if now - t < RATE_WINDOW_SECONDS]
+        if len(window) < max_rpm:
+            window.append(now)
+            _save_window(window)
+            return
+        sleep_for = RATE_WINDOW_SECONDS - (now - window[0]) + 0.1
+        if sleep_for > 0:
+            time.sleep(min(sleep_for, RATE_WINDOW_SECONDS + 1))
+
+
+def _is_rate_limited(stderr: str) -> bool:
+    s = stderr.lower()
+    return ("ratelimitexceeded" in s
+            or "quota exceeded" in s
+            or " 429 " in f" {s} "
+            or s.lstrip().startswith("429 "))
+
+
+# ---------------------------------------------------------------------------
+# gog wrapper
+# ---------------------------------------------------------------------------
+
+def run_gog(args: list[str], want_json: bool = True, check: bool = True) -> Any:
+    cmd = ["gog"]
+    if want_json:
+        cmd.append("--json")
+    cmd.extend(args)
+
+    max_retries = get_max_retries()
+    proc = None
+    for attempt in range(max_retries + 1):
+        throttle()
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+        if proc.returncode == 0:
+            break
+        if check and _is_rate_limited(proc.stderr) and attempt < max_retries:
+            # Sleep until the in-process window is empty, then retry.
+            now = time.time()
+            window = [t for t in _load_window() if now - t < RATE_WINDOW_SECONDS]
+            wait_for = RATE_WINDOW_SECONDS - (now - window[0]) + 1.0 if window else RATE_WINDOW_SECONDS
+            sys.stderr.write(
+                f"gog-db: rate-limited by Google Sheets; sleeping {wait_for:.0f}s "
+                f"(attempt {attempt + 1}/{max_retries})\n"
+            )
+            time.sleep(max(1.0, min(wait_for, RATE_WINDOW_SECONDS + 5)))
+            _save_window([])  # drained
+            continue
+        break
+
+    assert proc is not None
+    if check and proc.returncode != 0:
+        sys.stderr.write(proc.stderr)
+        die(f"`gog {' '.join(args)}` failed (exit {proc.returncode})", code=proc.returncode or 1)
+    if want_json:
+        if not proc.stdout.strip():
+            return None
+        try:
+            return json.loads(proc.stdout)
+        except json.JSONDecodeError as e:
+            die(f"could not parse gog JSON output: {e}\n--- stdout ---\n{proc.stdout}")
+    return proc.stdout
+
+
+def sheets_get_values(db: str, a1: str) -> list[list[str]]:
+    """Return raw 2D string array from a sheet range (empty list if nothing)."""
+    res = run_gog(["sheets", "get", db, a1, "--render", "UNFORMATTED_VALUE"])
+    # `gog sheets get --json` returns the Google Sheets API ValueRange:
+    #   {"range": "...", "majorDimension": "ROWS", "values": [[...], ...]}
+    if isinstance(res, dict):
+        return res.get("values") or []
+    if isinstance(res, list):
+        return res
+    return []
+
+
+def sheets_update(db: str, a1: str, values: list[list[Any]]) -> None:
+    run_gog([
+        "sheets", "update", db, a1,
+        "--values-json", json.dumps(values),
+        "--input", "RAW",
+    ], want_json=False)
+
+
+def sheets_append(db: str, a1: str, values: list[list[Any]]) -> None:
+    run_gog([
+        "sheets", "append", db, a1,
+        "--values-json", json.dumps(values),
+        "--input", "RAW",
+        "--insert", "INSERT_ROWS",
+    ], want_json=False)
+
+
+def sheets_clear(db: str, a1: str) -> None:
+    run_gog(["sheets", "clear", db, a1], want_json=False)
+
+
+def sheets_add_tab(db: str, name: str) -> None:
+    run_gog(["sheets", "add-tab", db, name], want_json=False)
+
+
+def sheets_delete_tab(db: str, name: str) -> None:
+    # gogcli has `delete-tab` (verified via `gog sheets --help` list).
+    run_gog(["sheets", "delete-tab", db, name, "--force"], want_json=False)
+
+
+def sheets_metadata(db: str) -> dict:
+    return run_gog(["sheets", "metadata", db])
+
+
+def list_tabs(db: str) -> list[str]:
+    meta = sheets_metadata(db)
+    sheets = meta.get("sheets") if isinstance(meta, dict) else None
+    if not sheets:
+        return []
+    out = []
+    for s in sheets:
+        props = s.get("properties") if isinstance(s, dict) else None
+        if props and "title" in props:
+            out.append(props["title"])
+        elif isinstance(s, dict) and "title" in s:
+            out.append(s["title"])
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Type system
+# ---------------------------------------------------------------------------
+
+def cast_value(raw: Any, typ: str) -> Any:
+    """Parse a value coming in from JSON / --set flag into a typed Python value."""
+    if raw is None or raw == "":
+        return None
+    if typ == "str":
+        return str(raw)
+    if typ == "int":
+        return int(raw)
+    if typ == "float":
+        return float(raw)
+    if typ == "bool":
+        if isinstance(raw, bool):
+            return raw
+        s = str(raw).strip().lower()
+        if s in ("1", "true", "yes", "y", "t"):
+            return True
+        if s in ("0", "false", "no", "n", "f"):
+            return False
+        raise ValueError(f"invalid bool: {raw!r}")
+    if typ == "date":
+        if isinstance(raw, date) and not isinstance(raw, datetime):
+            return raw
+        return date.fromisoformat(str(raw))
+    if typ == "datetime":
+        if isinstance(raw, datetime):
+            return raw
+        return datetime.fromisoformat(str(raw))
+    raise ValueError(f"unknown type: {typ}")
+
+
+def format_value(v: Any, typ: str) -> str:
+    """Format a typed value for storage in a sheet cell (always a string)."""
+    if v is None:
+        return ""
+    if typ == "bool":
+        return "true" if v else "false"
+    if typ in ("date", "datetime"):
+        return v.isoformat() if hasattr(v, "isoformat") else str(v)
+    return str(v)
+
+
+def parse_cell(raw: str, typ: str) -> Any:
+    """Parse a string cell from the sheet back into a typed value."""
+    if raw is None or raw == "":
+        return None
+    try:
+        return cast_value(raw, typ)
+    except (ValueError, TypeError):
+        return raw  # fall back to string if the sheet has dirty data
+
+
+# ---------------------------------------------------------------------------
+# Schema
+# ---------------------------------------------------------------------------
+
+class Column:
+    __slots__ = ("name", "type", "pk", "fk_table", "fk_column", "not_null")
+
+    def __init__(self, name: str, type_: str, pk: bool, fk_table: str, fk_column: str, not_null: bool):
+        self.name = name
+        self.type = type_
+        self.pk = pk
+        self.fk_table = fk_table
+        self.fk_column = fk_column
+        self.not_null = not_null
+
+    def to_row(self, table: str) -> list[str]:
+        return [
+            table, self.name, self.type,
+            "1" if self.pk else "",
+            self.fk_table or "",
+            self.fk_column or "",
+            "1" if self.not_null else "",
+        ]
+
+
+class Table:
+    def __init__(self, name: str):
+        self.name = name
+        self.columns: list[Column] = []
+
+    @property
+    def column_names(self) -> list[str]:
+        return [c.name for c in self.columns]
+
+    @property
+    def pk(self) -> Column | None:
+        for c in self.columns:
+            if c.pk:
+                return c
+        return None
+
+    @property
+    def fks(self) -> list[Column]:
+        return [c for c in self.columns if c.fk_table]
+
+
+class Schema:
+    def __init__(self) -> None:
+        self.tables: dict[str, Table] = {}
+
+    def __contains__(self, name: str) -> bool:
+        return name in self.tables
+
+    def get(self, name: str) -> Table:
+        if name not in self.tables:
+            die(f"unknown table: {name}")
+        return self.tables[name]
+
+    def referencing(self, target_table: str) -> list[tuple[Table, Column]]:
+        """Return [(table, fk_column), ...] for every FK that points at target_table."""
+        out: list[tuple[Table, Column]] = []
+        for t in self.tables.values():
+            for c in t.fks:
+                if c.fk_table == target_table:
+                    out.append((t, c))
+        return out
+
+
+def ensure_schema_tab(db: str) -> None:
+    """Make sure the _schema tab exists with header row."""
+    tabs = list_tabs(db)
+    if SCHEMA_TAB not in tabs:
+        sheets_add_tab(db, SCHEMA_TAB)
+    rows = sheets_get_values(db, f"{SCHEMA_TAB}!A1:G1")
+    if not rows or rows[0] != SCHEMA_HEADERS:
+        sheets_update(db, f"{SCHEMA_TAB}!A1", [SCHEMA_HEADERS])
+
+
+def load_schema(db: str) -> Schema:
+    ensure_schema_tab(db)
+    rows = sheets_get_values(db, f"{SCHEMA_TAB}!A2:G")
+    schema = Schema()
+    for raw in rows:
+        raw = (raw + [""] * len(SCHEMA_HEADERS))[: len(SCHEMA_HEADERS)]
+        table, column, typ, pk, fk_table, fk_column, not_null = raw
+        if not table or not column:
+            continue
+        if typ not in TYPES:
+            die(f"_schema: unknown type {typ!r} for {table}.{column}")
+        t = schema.tables.setdefault(table, Table(table))
+        t.columns.append(Column(
+            name=column, type_=typ,
+            pk=bool(str(pk).strip()),
+            fk_table=fk_table or "",
+            fk_column=fk_column or "",
+            not_null=bool(str(not_null).strip()),
+        ))
+    return schema
+
+
+def write_schema_for_table(db: str, table: Table) -> None:
+    rows = [c.to_row(table.name) for c in table.columns]
+    sheets_append(db, f"{SCHEMA_TAB}!A:G", rows)
+
+
+def remove_schema_for_table(db: str, table_name: str) -> None:
+    rows = sheets_get_values(db, f"{SCHEMA_TAB}!A2:G")
+    kept = [r for r in rows if (r + [""])[0] != table_name]
+    sheets_clear(db, f"{SCHEMA_TAB}!A2:G")
+    if kept:
+        sheets_append(db, f"{SCHEMA_TAB}!A:G", kept)
+
+
+# ---------------------------------------------------------------------------
+# Data I/O
+# ---------------------------------------------------------------------------
+
+def col_letter(idx_zero_based: int) -> str:
+    n = idx_zero_based
+    s = ""
+    while True:
+        s = chr(ord("A") + n % 26) + s
+        n = n // 26 - 1
+        if n < 0:
+            break
+    return s
+
+
+def read_table(db: str, table: Table) -> list[dict]:
+    last_col = col_letter(len(table.columns) - 1)
+    rows = sheets_get_values(db, f"{table.name}!A1:{last_col}")
+    if not rows:
+        return []
+    header = rows[0]
+    data = []
+    types = {c.name: c.type for c in table.columns}
+    for raw in rows[1:]:
+        raw = (raw + [""] * len(header))[: len(header)]
+        if all((cell == "" or cell is None) for cell in raw):
+            continue
+        row = {}
+        for col_name, cell in zip(header, raw):
+            row[col_name] = parse_cell(cell, types.get(col_name, "str"))
+        data.append(row)
+    return data
+
+
+def write_table_full(db: str, table: Table, rows: list[dict]) -> None:
+    """Rewrite the entire data area (rows 2+) of a table."""
+    last_col = col_letter(len(table.columns) - 1)
+    sheets_clear(db, f"{table.name}!A2:{last_col}")
+    if not rows:
+        return
+    values = []
+    for r in rows:
+        values.append([format_value(r.get(c.name), c.type) for c in table.columns])
+    sheets_append(db, f"{table.name}!A:{last_col}", values)
+
+
+# ---------------------------------------------------------------------------
+# WHERE / SET parsing
+# ---------------------------------------------------------------------------
+
+WHERE_OPS = ["<=", ">=", "!=", "=", "<", ">", " like "]
+
+
+def parse_where(expr: str | None) -> list[tuple[str, str, str]]:
+    if not expr:
+        return []
+    out = []
+    for clause in [c.strip() for c in expr.split(",") if c.strip()]:
+        op_found = None
+        for op in WHERE_OPS:
+            idx = clause.lower().find(op) if op == " like " else clause.find(op)
+            if idx >= 0:
+                col = clause[:idx].strip()
+                val = clause[idx + len(op):].strip()
+                op_found = op.strip() if op != " like " else "like"
+                out.append((col, op_found, val))
+                break
+        if not op_found:
+            die(f"could not parse where clause: {clause!r}")
+    return out
+
+
+def parse_set(expr: str) -> dict[str, str]:
+    out: dict[str, str] = {}
+    # We accept the same comma-separated `col=val` form. Values cannot contain
+    # commas in the flag form — if you need that, use insert with full JSON
+    # then update is fine for everything else.
+    for clause in [c.strip() for c in expr.split(",") if c.strip()]:
+        if "=" not in clause:
+            die(f"--set clause missing '=': {clause!r}")
+        k, _, v = clause.partition("=")
+        out[k.strip()] = v.strip()
+    return out
+
+
+def match_predicates(row: dict, table: Table, predicates: list[tuple[str, str, str]]) -> bool:
+    types = {c.name: c.type for c in table.columns}
+    for col, op, raw in predicates:
+        if col not in types:
+            die(f"unknown column in --where: {col!r}")
+        lhs = row.get(col)
+        if op == "like":
+            if lhs is None:
+                return False
+            pat = re.escape(raw).replace("%", ".*").replace("_", ".")
+            if not re.fullmatch(pat, str(lhs), re.IGNORECASE):
+                return False
+            continue
+        try:
+            rhs = cast_value(raw, types[col])
+        except (ValueError, TypeError) as e:
+            die(f"cannot cast where value {raw!r} for column {col} ({types[col]}): {e}")
+        if op == "=":
+            if lhs != rhs:
+                return False
+        elif op == "!=":
+            if lhs == rhs:
+                return False
+        elif op == "<":
+            if not (lhs is not None and lhs < rhs):
+                return False
+        elif op == "<=":
+            if not (lhs is not None and lhs <= rhs):
+                return False
+        elif op == ">":
+            if not (lhs is not None and lhs > rhs):
+                return False
+        elif op == ">=":
+            if not (lhs is not None and lhs >= rhs):
+                return False
+        else:
+            die(f"unknown op: {op}")
+    return True
+
+
+# ---------------------------------------------------------------------------
+# FK helpers
+# ---------------------------------------------------------------------------
+
+def fk_target_exists(db: str, schema: Schema, fk_table: str, fk_column: str, value: Any) -> bool:
+    target_table = schema.get(fk_table)
+    rows = read_table(db, target_table)
+    for r in rows:
+        if r.get(fk_column) == value:
+            return True
+    return False
+
+
+def check_fks_for_row(db: str, schema: Schema, table: Table, row: dict) -> None:
+    for c in table.fks:
+        v = row.get(c.name)
+        if v is None:
+            continue
+        if not fk_target_exists(db, schema, c.fk_table, c.fk_column, v):
+            die(
+                f"FK violation: {table.name}.{c.name} = {v!r} not found in "
+                f"{c.fk_table}.{c.fk_column}",
+                code=2,
+            )
+
+
+# ---------------------------------------------------------------------------
+# Subcommands
+# ---------------------------------------------------------------------------
+
+def cmd_init(args: argparse.Namespace) -> None:
+    cli = ["sheets", "create", args.title]
+    if args.parent:
+        cli += ["--parent", args.parent]
+    res = run_gog(cli)
+    sid = None
+    if isinstance(res, dict):
+        sid = res.get("spreadsheetId") or res.get("id")
+    if not sid:
+        die(f"could not extract spreadsheetId from `gog sheets create` response: {res}")
+    ensure_schema_tab(sid)
+    cfg = load_config()
+    cfg["active_db"] = sid
+    save_config(cfg)
+    emit({"spreadsheetId": sid, "title": args.title, "active": True}, as_json=args.json)
+
+
+def cmd_use(args: argparse.Namespace) -> None:
+    sheets_metadata(args.spreadsheet_id)
+    cfg = load_config()
+    cfg["active_db"] = args.spreadsheet_id
+    save_config(cfg)
+    emit({"active_db": args.spreadsheet_id}, as_json=args.json)
+
+
+def cmd_list_tables(args: argparse.Namespace) -> None:
+    db = resolve_db(args.db)
+    schema = load_schema(db)
+    out = []
+    for t in schema.tables.values():
+        out.append({
+            "table": t.name,
+            "columns": len(t.columns),
+            "pk": t.pk.name if t.pk else None,
+            "fks": [f"{c.name}->{c.fk_table}.{c.fk_column}" for c in t.fks],
+        })
+    emit(out, as_json=args.json)
+
+
+def parse_column_spec(spec: str) -> Column:
+    parts = [p.strip() for p in spec.split(":")]
+    if len(parts) < 2:
+        die(f"bad column spec: {spec!r} (expected name:type[:pk[:not_null]])")
+    name, typ, *flags = parts
+    if typ not in TYPES:
+        die(f"unknown type {typ!r} in column {name!r} (allowed: {sorted(TYPES)})")
+    pk = "pk" in flags
+    nn = "not_null" in flags or "notnull" in flags
+    return Column(name=name, type_=typ, pk=pk, fk_table="", fk_column="", not_null=nn or pk)
+
+
+def cmd_create_table(args: argparse.Namespace) -> None:
+    db = resolve_db(args.db)
+    schema = load_schema(db)
+    if args.table in schema:
+        die(f"table {args.table!r} already exists")
+    if args.table.startswith("_"):
+        die("table names starting with '_' are reserved")
+
+    columns = [parse_column_spec(s) for s in args.columns.split(",") if s.strip()]
+    pks = [c for c in columns if c.pk]
+    if len(pks) != 1:
+        die(f"exactly one column must be marked :pk (got {len(pks)})")
+
+    if args.fk:
+        for fk_spec in args.fk:
+            for clause in [c.strip() for c in fk_spec.split(",") if c.strip()]:
+                if ":" not in clause or "." not in clause.split(":", 1)[1]:
+                    die(f"bad --fk spec: {clause!r} (expected col:table.col)")
+                col_name, target = clause.split(":", 1)
+                ft, fc = target.split(".", 1)
+                col = next((c for c in columns if c.name == col_name.strip()), None)
+                if not col:
+                    die(f"--fk references unknown column {col_name!r}")
+                if ft not in schema:
+                    die(f"--fk target table {ft!r} does not exist")
+                target_pk = schema.get(ft).pk
+                target_col = next((c for c in schema.get(ft).columns if c.name == fc), None)
+                if not target_col:
+                    die(f"--fk target {ft}.{fc} does not exist")
+                if target_col.type != col.type:
+                    die(f"--fk type mismatch: {col.name}({col.type}) -> {ft}.{fc}({target_col.type})")
+                if not target_col.pk:
+                    die(f"--fk target {ft}.{fc} is not a primary key")
+                col.fk_table = ft
+                col.fk_column = fc
+
+    table = Table(args.table)
+    table.columns = columns
+    sheets_add_tab(db, args.table)
+    last_col = col_letter(len(columns) - 1)
+    sheets_update(db, f"{args.table}!A1", [[c.name for c in columns]])
+    write_schema_for_table(db, table)
+    emit(
+        {"table": args.table, "columns": [c.name for c in columns], "pk": pks[0].name},
+        as_json=args.json,
+    )
+
+
+def cmd_drop_table(args: argparse.Namespace) -> None:
+    db = resolve_db(args.db)
+    schema = load_schema(db)
+    table = schema.get(args.table)
+    refs = schema.referencing(args.table)
+    if refs and not args.force:
+        names = ", ".join(f"{t.name}.{c.name}" for t, c in refs)
+        die(f"table {args.table!r} is referenced by: {names}. Pass --force to drop anyway.", code=2)
+    sheets_delete_tab(db, args.table)
+    remove_schema_for_table(db, args.table)
+    emit({"dropped": args.table}, as_json=args.json)
+
+
+def cmd_describe(args: argparse.Namespace) -> None:
+    db = resolve_db(args.db)
+    schema = load_schema(db)
+    table = schema.get(args.table)
+    out = []
+    for c in table.columns:
+        out.append({
+            "column": c.name,
+            "type": c.type,
+            "pk": c.pk,
+            "not_null": c.not_null,
+            "fk": f"{c.fk_table}.{c.fk_column}" if c.fk_table else None,
+        })
+    emit(out, as_json=args.json)
+
+
+def cmd_insert(args: argparse.Namespace) -> None:
+    db = resolve_db(args.db)
+    schema = load_schema(db)
+    table = schema.get(args.table)
+
+    raw_data: dict = json.loads(args.json_data)
+    if not isinstance(raw_data, dict):
+        die("--json must be a JSON object")
+
+    typed_row: dict[str, Any] = {}
+    for c in table.columns:
+        raw = raw_data.get(c.name)
+        if raw is None and c.not_null:
+            die(f"column {c.name} is NOT NULL")
+        try:
+            typed_row[c.name] = cast_value(raw, c.type)
+        except (ValueError, TypeError) as e:
+            die(f"cannot cast {c.name}={raw!r} ({c.type}): {e}")
+
+    unknown = set(raw_data.keys()) - set(table.column_names)
+    if unknown:
+        die(f"unknown columns: {sorted(unknown)}")
+
+    pk = table.pk
+    if pk and typed_row.get(pk.name) is None:
+        die(f"primary key {pk.name} cannot be empty")
+    existing = read_table(db, table)
+    if pk:
+        for r in existing:
+            if r.get(pk.name) == typed_row[pk.name]:
+                die(f"duplicate PK: {pk.name}={typed_row[pk.name]!r}", code=2)
+
+    check_fks_for_row(db, schema, table, typed_row)
+
+    row_values = [format_value(typed_row.get(c.name), c.type) for c in table.columns]
+    last_col = col_letter(len(table.columns) - 1)
+    sheets_append(db, f"{table.name}!A:{last_col}", [row_values])
+    emit({"inserted": typed_row}, as_json=args.json)
+
+
+def cmd_update(args: argparse.Namespace) -> None:
+    db = resolve_db(args.db)
+    schema = load_schema(db)
+    table = schema.get(args.table)
+
+    predicates = parse_where(args.where)
+    raw_set = parse_set(args.set_expr)
+    unknown = set(raw_set.keys()) - set(table.column_names)
+    if unknown:
+        die(f"unknown columns in --set: {sorted(unknown)}")
+
+    typed_set: dict[str, Any] = {}
+    types = {c.name: c.type for c in table.columns}
+    for k, v in raw_set.items():
+        try:
+            typed_set[k] = cast_value(v, types[k])
+        except (ValueError, TypeError) as e:
+            die(f"cannot cast {k}={v!r} ({types[k]}): {e}")
+
+    rows = read_table(db, table)
+    changed = 0
+    pk_col = table.pk.name if table.pk else None
+    for r in rows:
+        if not match_predicates(r, table, predicates):
+            continue
+        new_row = dict(r)
+        new_row.update(typed_set)
+        if pk_col and new_row.get(pk_col) != r.get(pk_col):
+            for other in rows:
+                if other is r:
+                    continue
+                if other.get(pk_col) == new_row.get(pk_col):
+                    die(f"update would duplicate PK: {pk_col}={new_row[pk_col]!r}", code=2)
+        for c in table.fks:
+            if c.name in typed_set:
+                v = new_row.get(c.name)
+                if v is not None and not fk_target_exists(db, schema, c.fk_table, c.fk_column, v):
+                    die(
+                        f"FK violation: {table.name}.{c.name} = {v!r} not in "
+                        f"{c.fk_table}.{c.fk_column}",
+                        code=2,
+                    )
+        r.update(typed_set)
+        changed += 1
+
+    if changed:
+        write_table_full(db, table, rows)
+    emit({"updated": changed}, as_json=args.json)
+
+
+def cmd_delete(args: argparse.Namespace) -> None:
+    db = resolve_db(args.db)
+    schema = load_schema(db)
+    table = schema.get(args.table)
+
+    predicates = parse_where(args.where)
+    if not predicates and not args.all:
+        die("refusing to delete all rows without --all (or pass --where)")
+
+    rows = read_table(db, table)
+    refs = schema.referencing(args.table)
+    keep, drop = [], []
+    for r in rows:
+        if match_predicates(r, table, predicates):
+            drop.append(r)
+        else:
+            keep.append(r)
+
+    if not drop:
+        emit({"deleted": 0}, as_json=args.json)
+        return
+
+    if refs:
+        pk_col = table.pk
+        if pk_col is None:
+            die(f"cannot delete from {args.table}: referenced but has no PK")
+        pk_values = {r[pk_col.name] for r in drop}
+        for ref_table, fk_col in refs:
+            ref_rows = read_table(db, ref_table)
+            blocking = [rr for rr in ref_rows if rr.get(fk_col.name) in pk_values]
+            if blocking:
+                die(
+                    f"cannot delete from {args.table}: {len(blocking)} row(s) in "
+                    f"{ref_table.name}.{fk_col.name} still reference these PKs",
+                    code=2,
+                )
+
+    write_table_full(db, table, keep)
+    emit({"deleted": len(drop)}, as_json=args.json)
+
+
+def cmd_select(args: argparse.Namespace) -> None:
+    db = resolve_db(args.db)
+    schema = load_schema(db)
+    table = schema.get(args.table)
+    rows = read_table(db, table)
+    predicates = parse_where(args.where)
+    rows = [r for r in rows if match_predicates(r, table, predicates)]
+    if args.order_by:
+        key_spec = args.order_by
+        desc = False
+        if ":" in key_spec:
+            key_spec, direction = key_spec.split(":", 1)
+            desc = direction.lower().startswith("desc")
+        if key_spec not in {c.name for c in table.columns}:
+            die(f"unknown order-by column: {key_spec}")
+        rows.sort(key=lambda r: (r.get(key_spec) is None, r.get(key_spec)), reverse=desc)
+    if args.limit is not None:
+        rows = rows[: args.limit]
+    if args.columns:
+        wanted = [c.strip() for c in args.columns.split(",") if c.strip()]
+        unknown = set(wanted) - {c.name for c in table.columns}
+        if unknown:
+            die(f"unknown columns: {sorted(unknown)}")
+        rows = [{c: r.get(c) for c in wanted} for r in rows]
+    emit(rows, as_json=args.json)
+
+
+def cmd_config(args: argparse.Namespace) -> None:
+    cfg = load_config()
+    if args.config_op == "show":
+        emit({
+            "active_db": cfg.get("active_db"),
+            "max_requests_per_minute": cfg.get("max_requests_per_minute", DEFAULT_MAX_RPM),
+            "max_retries": cfg.get("max_retries", DEFAULT_MAX_RETRIES),
+            "config_file": str(CONFIG_FILE),
+        }, as_json=args.json)
+        return
+    if args.config_op == "set":
+        key = args.key.replace("-", "_")
+        if key not in CONFIG_KEYS:
+            die(f"unknown config key: {args.key} (valid: {sorted(CONFIG_KEYS)})")
+        if key in ("max_requests_per_minute", "max_retries"):
+            try:
+                cfg[key] = int(args.value)
+            except ValueError:
+                die(f"{args.key} must be an integer, got {args.value!r}")
+            if key == "max_requests_per_minute" and cfg[key] < 1:
+                die("max_requests_per_minute must be >= 1")
+            if key == "max_retries" and cfg[key] < 0:
+                die("max_retries must be >= 0")
+        else:
+            cfg[key] = args.value
+        save_config(cfg)
+        emit({key: cfg[key]}, as_json=args.json)
+
+
+def cmd_check(args: argparse.Namespace) -> None:
+    db = resolve_db(args.db)
+    schema = load_schema(db)
+    violations = []
+    for table in schema.tables.values():
+        if not table.fks:
+            continue
+        rows = read_table(db, table)
+        for c in table.fks:
+            target_rows = read_table(db, schema.get(c.fk_table))
+            target_values = {r.get(c.fk_column) for r in target_rows}
+            for r in rows:
+                v = r.get(c.name)
+                if v is None:
+                    continue
+                if v not in target_values:
+                    violations.append({
+                        "table": table.name,
+                        "column": c.name,
+                        "value": v,
+                        "expected_in": f"{c.fk_table}.{c.fk_column}",
+                    })
+    emit(violations, as_json=args.json)
+    if violations:
+        sys.exit(2)
+
+
+# ---------------------------------------------------------------------------
+# Arg parser
+# ---------------------------------------------------------------------------
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(prog="gog-db", description="DB-like CLI over Google Sheets via gog")
+    p.add_argument("--db", help="Spreadsheet ID (overrides active DB)")
+    p.add_argument("--json", action="store_true", help="Emit JSON output")
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    s = sub.add_parser("init", help="Create a new database spreadsheet")
+    s.add_argument("title")
+    s.add_argument("--parent", help="Drive folder ID")
+    s.set_defaults(func=cmd_init)
+
+    s = sub.add_parser("use", help="Set the active database")
+    s.add_argument("spreadsheet_id")
+    s.set_defaults(func=cmd_use)
+
+    s = sub.add_parser("list-tables", help="List tables in the active DB")
+    s.set_defaults(func=cmd_list_tables)
+
+    s = sub.add_parser("create-table", help="Create a new table")
+    s.add_argument("table")
+    s.add_argument("--columns", required=True,
+                   help='Comma-separated "name:type[:pk|:not_null]" specs')
+    s.add_argument("--fk", action="append", default=[],
+                   help='Foreign key: "col:target_table.target_col" (repeatable)')
+    s.set_defaults(func=cmd_create_table)
+
+    s = sub.add_parser("drop-table", help="Drop a table")
+    s.add_argument("table")
+    s.add_argument("--force", action="store_true",
+                   help="Drop even if referenced by other tables")
+    s.set_defaults(func=cmd_drop_table)
+
+    s = sub.add_parser("describe", help="Show table schema")
+    s.add_argument("table")
+    s.set_defaults(func=cmd_describe)
+
+    s = sub.add_parser("insert", help="Insert a row")
+    s.add_argument("table")
+    s.add_argument("--json", dest="json_data", required=True,
+                   help='Row as a JSON object, e.g. \'{"id":1,"name":"Bob"}\'')
+    s.set_defaults(func=cmd_insert)
+
+    s = sub.add_parser("update", help="Update rows matching --where")
+    s.add_argument("table")
+    s.add_argument("--where", help='AND-only predicates: "col=val,col2>val2"')
+    s.add_argument("--set", dest="set_expr", required=True,
+                   help='Assignments: "col=val,col2=val2"')
+    s.set_defaults(func=cmd_update)
+
+    s = sub.add_parser("delete", help="Delete rows matching --where")
+    s.add_argument("table")
+    s.add_argument("--where")
+    s.add_argument("--all", action="store_true",
+                   help="Required to delete all rows (no --where)")
+    s.set_defaults(func=cmd_delete)
+
+    s = sub.add_parser("select", help="Select rows")
+    s.add_argument("table")
+    s.add_argument("--where")
+    s.add_argument("--columns", help="Comma-separated columns to project")
+    s.add_argument("--order-by", help='"col" or "col:desc"')
+    s.add_argument("--limit", type=int)
+    s.set_defaults(func=cmd_select)
+
+    s = sub.add_parser("check", help="Verify all FK references")
+    s.set_defaults(func=cmd_check)
+
+    s = sub.add_parser("config", help="View or set config values")
+    cfg_sub = s.add_subparsers(dest="config_op", required=True)
+    cfg_sub.add_parser("show", help="Print current config")
+    cfg_set = cfg_sub.add_parser("set", help="Set a config value")
+    cfg_set.add_argument("key",
+                         help="Key to set (max-requests-per-minute, max-retries, active-db)")
+    cfg_set.add_argument("value", help="New value")
+    s.set_defaults(func=cmd_config)
+
+    return p
+
+
+def main() -> None:
+    parser = build_parser()
+    args = parser.parse_args()
+    # subcommand-level --json overrides parent flag for `insert` (it reuses the name);
+    # everywhere else, parent `--json` is what enables JSON output.
+    if not hasattr(args, "json"):
+        args.json = False
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()
