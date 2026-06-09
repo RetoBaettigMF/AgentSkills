@@ -106,3 +106,8 @@ gog --account work@company.com gmail search "project update"
 - Non-interactive auth flows (`--manual`, `--remote`, `--access-token`)
 - Auto-refreshing OAuth tokens
 - Structured exit codes
+
+### Pitfalls & Quirks
+See `references/gmail-pitfalls.md` for:
+- Gmail send: long body escaping, `&` shell issues, file-based workaround
+- Drive download: `--out` (not `-o`), `ls --parent` (not `--folder`)

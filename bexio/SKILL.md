@@ -11,6 +11,11 @@ Kundenrechnungen und Finanzdaten für Cudos AG via das Bexio Modul des CudosCont
 
 **Script:** `scripts/cudos_controlling`
 
+Falls der relative Pfad nicht funktioniert, das Script mit absolutem Pfad aufrufen oder zuerst suchen:
+```bash
+find ~ -name cudos_controlling -path "*/bexio/*" 2>/dev/null
+```
+
 ## Verwendung
 
 Wichtig: Das script einfach so ausführen, ohne python3 oder uv!

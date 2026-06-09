@@ -136,6 +136,15 @@ scripts/crm query "select id, accountname from Accounts where accountname like '
 3. Bei mehreren Treffern: ID erfragen, dann mit `3xNNN` weiterarbeiten
 4. Multi-Select Felder (`cf_956`, `cf_575`, `cf_576`) immer mit `like` statt `=` filtern
 
+## ⚠️ Pitfalls
+
+### HTTP 500 bei komplexen WHERE-Klauseln
+Mehrere `cf_*`-Filter kombiniert mit `city like`-OR-Klauseln in einer Query lösen HTTP 500 aus.
+**Lösung:** Queries splitten — erst einfache Filter (z.B. nur `cf_654 = '3 - Potentieller Kunde'`), dann per `account-comments` und `details` tiefer gehen.
+
+### Multi-Select Felder
+`cf_956`, `cf_575`, `cf_576` sind Pipe-getrennte Multi-Selects (`Wert1 |##| Wert2`). Immer mit `like '%Wert%'` filtern, nie mit `=`.
+
 ---
 
 ## Typische Abfragen

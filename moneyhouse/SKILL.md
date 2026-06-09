@@ -9,6 +9,17 @@ Automatisierte Extraktion von Firmeninformationen von moneyhouse.ch via Playwrig
 
 ## Voraussetzungen
 
+### Playwright Browser
+
+Das Script benötigt einen Playwright-Browser (Chromium). Bei Erstinstallation:
+
+```bash
+pip3 install playwright
+python3 -m playwright install chromium
+```
+
+### Zugangsdaten
+
 Zugangsdaten in `scripts/.env` (siehe `.env.example`):
 
 ```

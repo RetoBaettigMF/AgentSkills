@@ -15,6 +15,11 @@ API key muss in `./scripts/.env` als `MBTOOLS_API_KEY` gesetzt sein (siehe `.env
 
 Wichtig: Das script einfach so ausführen, ohne python3 oder uv!
 
+Falls der relative Pfad `scripts/cudos_controlling` nicht gefunden wird, das Script mit absolutem Pfad aufrufen oder zuerst suchen:
+```bash
+find ~ -name cudos_controlling -path "*/rolx/*" 2>/dev/null
+```
+
 ### Stunden abfragen
 
 ```bash

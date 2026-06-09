@@ -9,32 +9,50 @@ YouTube-Videos als MP3 herunterladen via `yt-dlp` und `ffmpeg`.
 
 ## Voraussetzungen
 
-ffmpeg muss installiert sein (apt install ffmpeg / brew install ffmpeg)
+- `ffmpeg` (brew install ffmpeg / apt install ffmpeg)
+- `yt-dlp` CLI (brew install yt-dlp / pip install yt-dlp)
+
+> ⚠️ `brew install yt-dlp` installiert NUR den CLI-Befehl, nicht das Python-Modul `yt_dlp`. Das Python-Script `scripts/yt2mp3` funktioniert damit NICHT — immer den CLI-Weg nehmen.
 
 ## Verwendung
 
-```bash
-scripts/yt2mp3 <youtube-url> [ausgabe-verzeichnis]
-```
-
-## Beispiele
+**Primär: yt-dlp CLI (empfohlen)**
 
 ```bash
-# In aktuelles Verzeichnis herunterladen
-scripts/yt2mp3 "https://www.youtube.com/watch?v=..."
-
-# In bestimmtes Verzeichnis
-scripts/yt2mp3 "https://www.youtube.com/watch?v=..." ~/Music
+cd ~/Downloads && yt-dlp -x --audio-format mp3 --audio-quality 192k "<youtube-url>"
 ```
 
-Das Script lädt die beste verfügbare Audioqualität herunter und konvertiert sie zu MP3 (192 kbps). Der Dateiname entspricht dem Video-Titel: `<video-titel>.mp3`
+Kein Python-Modul nötig — der `yt-dlp` CLI-Befehl erledigt alles in einem Schritt.
 
-## Upload auf Google Drive
-
-Nach dem Download können MP3s mit `scripts/upload.sh` auf Google Drive hochgeladen werden:
+**Fallback: Python-Script (nur wenn `yt_dlp` als Python-Modul installiert ist)**
 
 ```bash
-scripts/upload.sh
+python3 scripts/yt2mp3 "<youtube-url>" ~/Downloads
 ```
 
-Dies lädt alle `*.mp3` im aktuellen Verzeichnis auf einen konfigurierten Google Drive Ordner hoch, kopiert sie nach `~/Music` und löscht die lokalen Dateien.
+> ⚠️ `scripts/yt2mp3` ist ein Python-Script, das `import yt_dlp` braucht. `brew install yt-dlp` installiert nur den CLI-Befehl, nicht das Python-Modul. Wenn `ModuleNotFoundError: No module named 'yt_dlp'` kommt, nutze den CLI-Weg oben.
+
+## Workflow (vollständig — IMMER beide Schritte)
+
+Schritt 1 und 2 gehören zusammen. Niemals nur Schritt 1 ausführen.
+
+### Schritt 1: Download
+
+```bash
+cd ~/Downloads && yt-dlp -x --audio-format mp3 --audio-quality 192k "<youtube-url>"
+```
+
+### Schritt 2: Upload + Ablage (PFLICHT)
+
+Nach erfolgreichem Download SOFORT den Upload ausführen. Das Script findet alle `*.mp3` im aktuellen Verzeichnis:
+
+```bash
+cd ~/Downloads && bash /Users/morticiamac/Development/AgentSkills/youtube-download/scripts/upload.sh
+```
+
+Das Script `upload.sh` macht drei Dinge:
+1. Lädt alle `*.mp3` im aktuellen Verzeichnis auf Google Drive hoch
+2. Kopiert sie nach `~/Music`
+3. Löscht die temporären lokalen Dateien
+
+Nach dem Upload ist die Datei unter `~/Music/<titel>.mp3` und via Google Drive Link verfügbar.

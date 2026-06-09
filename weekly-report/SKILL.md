@@ -1,11 +1,15 @@
 ---
 name: weekly-report
-description: Erstelle den wöchentlichen Bericht für Reto Bättig: RolX-Stunden der letzten Woche zusammenfassen, Kalendertermine der nächsten Woche auflisten, Bericht formatieren und per Email + WhatsApp senden. Verwende diesen Skill für "Wochenreport", "Weekly Report", "Wochenbericht erstellen".
+description: "Erstelle den wöchentlichen Bericht für Reto Bättig: RolX-Stunden der letzten Woche zusammenfassen, Kalendertermine der nächsten Woche auflisten, Bericht formatieren und per Email + WhatsApp senden. Verwende diesen Skill für \"Wochenreport\", \"Weekly Report\", \"Wochenbericht erstellen\"."
 ---
 
 # Wochenreport erstellen
 
 Erstellt den Wochenreport in 4 Schritten.
+
+## Voraussetzungen
+
+- Google Calendar für `reto.baettig@cudos.ch` muss authentifiziert sein: `gog auth add reto.baettig@cudos.ch --services calendar`. Ohne Auth können die Termine in Schritt 2 nicht abgerufen werden → im Report vermerken und Einrichtungsbefehl mitliefern.
 
 ## Definitionen
 - **Letzte Woche**: Gehe zum letzten Montag zurück → +7 Tage = Ende der letzten Woche
@@ -39,7 +43,10 @@ Hole alle Einträge von Reto Bättig aus RolX mit Kommentar. Fasse sie in folgen
 
 ## Schritt 2: Kalendertermine der nächsten Woche
 
-Hole alle Termine aus dem Google Calendar von reto.baettig@cudos.ch für die nächste Woche.
+Hole alle Termine aus dem Google Calendar von reto.baettig@cudos.ch für die nächste Woche mit:
+```bash
+gog calendar list reto.baettig@cudos.ch --days 7 --json
+```
 
 **Formatierung:** Eine Zeile pro Termin, z.B.:
 ```

@@ -26,7 +26,13 @@ Gehe folgendermassen vor:
 - Hole dir die Anweisungen für die Beantwortung gemäss der Feinklassifizierung und der Liste im übernächsten Kapitel
 - Formuliere eine Antwort an die Email in der detektierten Sprache gemäss den Anweisungen für die entsprechende Feinklassifizierung
 - Füge die folgende Fusszeile an (in die richtige Sprache übersetzt): "Diese Email wurde von meinem AI Bot beantwortet. Bitte antworten sie nicht auf diese Email, sondern bei Bedarf wieder an mich."
-- Sende die Email als "Reply" mit Zitat der originalen Nachricht an die entsprechende Adresse und sende ein CC an reto.baettig@cudos.ch
+- Sende die Email als "Reply" mit Zitat der originalen Nachricht an die entsprechende Adresse und sende ein CC an reto.baettig@cudos.ch.
+  Verwende dafür folgenden Befehl (Body zuerst in `/tmp/email_reply.txt` schreiben, dann senden):
+  ```
+  gog gmail send --to "<original_sender_email>" --cc "reto.baettig@cudos.ch" --subject "<subject>" --body-file /tmp/email_reply.txt --thread-id <threadId> --quote --account bar.ai.bot@cudos.ch --json
+  ```
+  **Wichtig:** `--thread-id` (nicht `--reply-to-message-id`) zusammen mit `--quote` verwenden — das setzt den Thread korrekt fort und zitiert die originale Nachricht.
+  Details und weitere Reply-Patterns: siehe `references/gog-gmail-send-reply.md`.
 - Markiere die Email als gelesen, füge das Tag "Erledigt" hinzu und archiviere sie folgendermassen:
   1) Erst aus INBOX entfernen (wichtig: separater Befehl!): gog gmail thread modify <threadId> --remove INBOX --account bar.ai.bot@cudos.ch
   2) Als gelesen markieren: gog gmail thread modify <threadId> --remove UNREAD --account bar.ai.bot@cudos.ch
@@ -64,7 +70,29 @@ Führe danach noch die weiteren Aktionen nach Klasse aus (siehe separates Unterk
   Verwende folgendes Kommando und fülle die entsprechenden Daten ein:
   `gog sheets append 1D6Cdci6qZXtjFNnQLPBUz5xKWel_wZIo30J87kiHRUc 'Investors!A:D' 'Datetime|Sender|Message|Answer'`
 
+## Automatische Email-Überwachung (Cron Job)
+
+Um Emails von Reto automatisch und zeitnah zu verarbeiten, richte einen Cron-Job ein:
+
+```
+cronjob action=create
+  name="Email Monitor (Reto → Morticia)"
+  schedule="every 10m"
+  skills=["answer-emails"]
+  prompt="Check bar.ai.bot@cudos.ch for unread emails FROM reto.baettig@cudos.ch OR reto@baettig.org.
+          Use: gog gmail search \"from:reto.baettig@cudos.ch OR from:reto@baettig.org is:unread\" --account bar.ai.bot@cudos.ch --json
+          For each unread email, follow the answer-emails skill EXACTLY.
+          IMPORTANT: If there are NO unread emails, respond with ABSOLUTELY NOTHING — empty response, zero characters.
+          This ensures silent delivery when there's nothing to process."
+  deliver="origin"
+```
+
+**Wichtig:** Der `empty response`-Trick ist entscheidend — bei leerer Antwort wird nichts an den Chat zugestellt, sodass der User nicht alle 10 Minuten mit "Keine neuen Emails" zugespammt wird. Nur wenn tatsächlich Emails verarbeitet wurden, erscheint das Ergebnis.
+
 ## Verarbeitung von Emails der Klasse 2 (Aufträge und Antworten von Reto auf deine Nachrichten an ihn)
 Überlege zuerst, ob der Auftrag ein "Standardauftrag" ist, für welcher bereits ein bestehender Skill oder ein bestehendes Tool existiert.
 
 Versuche den Auftrag so gut wie möglich auszuführen und melde den Fortschritt per Email an reto.baettig@cudos.ch und an den aktiven Telegram Kanal von Reto.
+
+## Automatisches Email-Monitoring (Cron)
+Siehe `references/email-monitor-cron.md` für das Setup eines Cron-Jobs, der alle 10 Minuten den Posteingang checkt und Emails automatisch verarbeitet.

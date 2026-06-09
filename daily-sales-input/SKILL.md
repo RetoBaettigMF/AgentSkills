@@ -11,7 +11,7 @@ Dieser Skill wird täglich ausgeführt (Cronjob).
 Erstelle einen täglichen Sales-Input für Cudos AG.
 1. Suche nach aktuellen News/Trigger (verwende google-ai-search oder Web-Suche nach Unternehmen in der Region Zürich, die IT-Projekte, Digitalisierung, Software-Entwicklung oder AI-Integration starten könnten)
 2. Prüfe, was wir zu der Firma im CRM schon wissen 
-3. Recherchiere gefundene Firmen mit Moneyhouse (~/Development/mb_tools_bar/moneyhouse-scraper/moneyhouse_scraper.py) und Google AI Search
+3. Recherchiere gefundene Firmen mit Moneyhouse (siehe moneyhouse-Skill: `~/Development/AgentSkills/moneyhouse/scripts/moneyhouse "<Firmenname>" --headless`) und Google AI Search
 4. Filter: Mindestens 200k CHF/Jahr Potential, max 60min von Zürich erreichbar
 5. Wähle 1-2 Firmen aus und erstelle einen konkreten Sales-Input
 
@@ -118,3 +118,16 @@ Reto Bättig
 - Lerne täglich dazu — entweder durch selbst entdeckte Verbesserungen oder durch Feedback des Users
 - **WICHTIG:** Falls Feedback zum Sales Input kommt, baue das Feedback in dieses Dokument ein (DailySalesInput.md), NICHT in MEMORY.md
 - Dieses Dokument ist die zentrale Anlaufstelle für alle Sales-Input-Anweisungen und Qualitätskriterien
+
+## ⚠️ PITFALLS
+
+### Email-Versand mit langem Body
+`gog gmail send --body "..."` scheitert bei langen Texten mit Sonderzeichen (`&`, `'`, `"`).
+**Lösung:** Body in Temp-Datei schreiben und per File-Referenz senden:
+```bash
+gog gmail send --to reto.baettig@cudos.ch --subject "Sales Input $(date +%d.%m.%Y)" --body "$(cat /tmp/sales-body.txt | head -c 3500)"
+```
+Oder per Python `subprocess.run()` mit Liste-Argumenten (kein Shell-Escaping nötig).
+
+### CRM-Queries mit komplexen WHERE-Bedingungen
+Mehrfache `cf_*`-Filter in einer Query können HTTP 500 auslösen. **Lösung:** Queries aufteilen — erst nach Account-IDs filtern, dann einzeln Details abrufen mit `account-comments` oder `details`.

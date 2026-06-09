@@ -7,6 +7,10 @@ description: Transcribe audio files (MP3, WAV/PCM) using OpenAI Whisper API. Use
 
 Transcribe audio files using OpenAI's Whisper speech-to-text API.
 
+## References
+
+- `references/telegram-voice-messages.md` — Finding and transcribing Telegram voice messages
+
 ## Supported Formats
 
 - MP3
