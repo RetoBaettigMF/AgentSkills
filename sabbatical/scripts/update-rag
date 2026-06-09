@@ -1,0 +1,77 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = [
+#   "openai>=1.40.0",
+#   "python-dotenv>=1.0.0",
+# ]
+# ///
+"""Update the JSON vector DB. Only re-embeds new or changed files."""
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from _lib import (
+    DB_PATH,
+    embed_text,
+    get_markdowns_path,
+    iter_markdown_files,
+    load_db,
+    load_env,
+    save_db,
+)
+
+
+def main() -> int:
+    load_env()
+    root = get_markdowns_path()
+    db = load_db()
+
+    current: dict[str, float] = {}
+    for f in iter_markdown_files(root):
+        key = str(f.relative_to(root))
+        current[key] = f.stat().st_mtime
+
+    removed = [key for key in db if key not in current]
+    for key in removed:
+        print(f"Removing {key}", file=sys.stderr)
+        del db[key]
+
+    added = changed = skipped = 0
+    for key, mtime in current.items():
+        existing = db.get(key)
+        if existing and existing.get("mtime") == mtime:
+            skipped += 1
+            continue
+        f = root / key
+        content = f.read_text(encoding="utf-8", errors="replace")
+        if not content.strip():
+            print(f"Skipping empty file {key}", file=sys.stderr)
+            db.pop(key, None)
+            continue
+        action = "Updating" if existing else "Adding"
+        print(f"{action} {key}...", file=sys.stderr)
+        try:
+            vector = embed_text(content)
+        except Exception as e:
+            print(f"  embedding failed: {e}", file=sys.stderr)
+            continue
+        db[key] = {"mtime": mtime, "vector": vector}
+        if existing:
+            changed += 1
+        else:
+            added += 1
+
+    save_db(db)
+    print(
+        f"Wrote {DB_PATH}: {added} added, {changed} changed, "
+        f"{skipped} unchanged, {len(removed)} removed",
+        file=sys.stderr,
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

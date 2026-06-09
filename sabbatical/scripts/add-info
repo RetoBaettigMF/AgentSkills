@@ -1,0 +1,48 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = [
+#   "openai>=1.40.0",
+#   "python-dotenv>=1.0.0",
+# ]
+# ///
+"""Propose a diff (modify existing file or create new) for new information.
+
+The calling agent decides whether to apply the diff. This script does NOT
+modify any file on disk.
+"""
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from _lib import load_env, propose_diff
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Propose a diff for new information in the sabbatical knowledge base."
+    )
+    parser.add_argument(
+        "info",
+        help="The information to store (use '-' to read from stdin)",
+    )
+    args = parser.parse_args()
+
+    info = sys.stdin.read() if args.info == "-" else args.info
+    info = info.strip()
+    if not info:
+        print("Error: empty information.", file=sys.stderr)
+        return 1
+
+    load_env()
+    result = propose_diff(info)
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

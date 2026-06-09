@@ -1,0 +1,48 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = [
+#   "openai>=1.40.0",
+#   "python-dotenv>=1.0.0",
+# ]
+# ///
+"""Search the sabbatical knowledge base. Returns matching file contents + paths."""
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from _lib import load_env, search
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Search the sabbatical knowledge base.")
+    parser.add_argument("question", help="Question or search query")
+    parser.add_argument("--top-k", type=int, default=5, help="Max vector-DB hits (default: 5)")
+    parser.add_argument("--json", dest="as_json", action="store_true", help="Emit JSON (recommended for agent use)")
+    args = parser.parse_args()
+
+    load_env()
+    results = search(args.question, top_k=args.top_k)
+
+    if args.as_json:
+        print(json.dumps(results, indent=2, ensure_ascii=False))
+        return 0
+
+    if not results:
+        print("No results.", file=sys.stderr)
+        return 1
+
+    for r in results:
+        score = f"{r['score']:.3f}" if r["score"] else "index"
+        print(f"\n## Source: {r['path']} (score: {score})\n")
+        print(r["content"])
+        print("\n---")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,4 @@
+scripts/.env
+vector_db.json
+summary_cache.json
+__pycache__/
