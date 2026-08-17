@@ -80,8 +80,34 @@ ssh baettig@baettig.org "rmdir /var/www/html/morticia/mein-projekt"
 
 Für Brand-Seiten, Styleguides und andere wiederverwendbare Daten: immer eine `brand.json` (strukturiert) und `brand.txt` (plain text) mit ins Verzeichnis legen. So können KI-Tools die Daten direkt per URL konsumieren (z.B. in Prompts: "Verwende die Brand Guidelines von https://baettig.org/morticia/cudos-design/brand.json"). Siehe `references/ai-readable-publishing.md`.
 
+## Pitfalls
+
+### 403 Forbidden nach rsync-Upload
+
+Nach `rsync` in ein neues/aktualisiertes Unterverzeichnis kann die URL `403 Forbidden` liefern. Zwei mögliche Ursachen — in dieser Reihenfolge prüfen:
+
+**1. Datei-Permissions (häufigster Fall):** rsync erstellt Dateien oft mit `600` (`-rw-------`) statt `644` (`-rw-r--r--`). Apache (www-data) kann sie dann nicht lesen.
+```bash
+# Prüfen:
+ssh baettig@baettig.org "ls -la /var/www/html/morticia/mein-projekt/"
+# Fixen:
+ssh baettig@baettig.org "chmod 644 /var/www/html/morticia/mein-projekt/*"
+```
+Vorher/Nachher mit lokalem curl verifizieren:
+```bash
+ssh baettig@baettig.org "curl -sI http://localhost/morticia/mein-projekt/ | head -5"
+```
+
+**2. Cloudflare-Proxy-Cache:** Wenn lokal bereits 200 kommt, aber extern noch 403, kurz warten (5–10s) und erneut testen. Löst sich von selbst.
+
+## Templates
+
+- `templates/audio-player.html` — Self-contained HTML audio player page with track listing, play/pause, configurable skip buttons (±2s/±5s/±10s), progress bar, volume control, auto-advance, and keyboard shortcuts. Dark theme, mobile-responsive. Designed for hosting alongside MP3 files in the same directory. Includes the mute-before-seek pattern to avoid audible glitches.
+- `references/audio-player-multi-tab.md` — How to extend the single-set template to support multiple tabbed track collections (e.g. textbook + workbook) sharing one player bar.
+
 ## Typischer Workflow
 
 1. HTML-Bericht oder Webseite lokal erstellen
 2. Mit `scripts/morticia-publish` hochladen (Root) oder `rsync` direkt für Unterverzeichnisse
-3. URL an Empfänger weitergeben: `https://baettig.org/morticia/<dateiname>`
+3. Bei 403: Siehe [Pitfalls → 403 Forbidden](#403-forbidden-nach-rsync-upload) — zuerst Permissions prüfen, dann Cloudflare-Cache
+4. URL an Empfänger weitergeben: `https://baettig.org/morticia/<dateiname>`

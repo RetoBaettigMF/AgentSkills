@@ -90,9 +90,32 @@ cronjob action=create
 **Wichtig:** Der `empty response`-Trick ist entscheidend — bei leerer Antwort wird nichts an den Chat zugestellt, sodass der User nicht alle 10 Minuten mit "Keine neuen Emails" zugespammt wird. Nur wenn tatsächlich Emails verarbeitet wurden, erscheint das Ergebnis.
 
 ## Verarbeitung von Emails der Klasse 2 (Aufträge und Antworten von Reto auf deine Nachrichten an ihn)
-Überlege zuerst, ob der Auftrag ein "Standardauftrag" ist, für welcher bereits ein bestehender Skill oder ein bestehendes Tool existiert.
 
-Versuche den Auftrag so gut wie möglich auszuführen und melde den Fortschritt per Email an reto.baettig@cudos.ch und an den aktiven Telegram Kanal von Reto.
+### Vorgehen
+
+1. **Kontext laden:** Lade den `reto-knowledge` Skill und lies die relevanten Wiki-Seiten (insbesondere `~/wiki/entities/reto-baettig.md`, `~/wiki/entities/cudos-ag.md` sowie alle weiteren relevanten Concept-Seiten aus `~/wiki/concepts/`). So hast du alle nötigen Hintergrundinfos, ohne Reto erneut fragen zu müssen.
+
+2. **Standardauftrag prüfen:** Überlege, ob es ein "Standardauftrag" ist, für den bereits ein eigener Skill existiert (z.B. `cudos-trail-profile`, `sales-outreach`, `termin-vorbereitung`, etc.). Falls ja, folge diesem Skill.
+
+3. **Auftrag ausführen:** Führe den Auftrag so gut wie möglich aus. Konsultiere bei Unsicherheiten das Wiki und die Extended Memory, NICHT Reto.
+
+4. **Antwort an Reto senden:** Sende das Resultat als Reply im selben Thread an Reto zurück. Verwende dasselbe Send-Muster wie bei Klasse 1:
+   ```
+   gog gmail send --to "reto.baettig@cudos.ch" --subject "<subject>" --body-file /tmp/email_reply.txt --thread-id <threadId> --quote --account bar.ai.bot@cudos.ch --json
+   ```
+   **Wichtig:** `--thread-id` (nicht `--reply-to-message-id`) zusammen mit `--quote` verwenden.
+
+5. **Archivieren:** Genau gleich wie bei Klasse 1:
+   1) Aus INBOX entfernen: `gog gmail thread modify <threadId> --remove INBOX --account bar.ai.bot@cudos.ch`
+   2) Als gelesen markieren: `gog gmail thread modify <threadId> --remove UNREAD --account bar.ai.bot@cudos.ch`
+   3) Erledigt-Label: `gog gmail thread modify <threadId> --add Erledigt --account bar.ai.bot@cudos.ch`
+   4) Verifiziere mit: `gog gmail messages search "in:inbox" --account bar.ai.bot@cudos.ch --json`
+
+## ⚠️ Pitfalls (gelten für Klasse 1 und 2)
+
+- **`gog` command not found:** In Cron-Umgebungen kann `gog` manchmal nicht auf dem PATH sein. Fallback: `/opt/homebrew/bin/gog`. Prüfe den Pfad mit `which gog` und verwende den vollen Pfad, falls nötig. Alle `gog` Aufrufe im Skill können mit dem vollen Pfad ausgeführt werden.
+- **Body zu gross:** `gog gmail send` kann mit sehr langen Bodies Probleme haben. Immer über `--body-file` und eine `/tmp/`-Datei senden, nie inline via `--body`.
+- **Thread-ID vs Message-ID:** Immer `--thread-id` verwenden, nicht `--reply-to-message-id`. `--thread-id` setzt den Thread korrekt fort und zitiert die originale Nachricht.
 
 ## Automatisches Email-Monitoring (Cron)
 Siehe `references/email-monitor-cron.md` für das Setup eines Cron-Jobs, der alle 10 Minuten den Posteingang checkt und Emails automatisch verarbeitet.

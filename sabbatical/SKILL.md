@@ -86,12 +86,34 @@ Copy `scripts/.env.example` to `scripts/.env` and fill in:
 - `EMBEDDING_BASE_URL` — defaults to `https://api.openai.com/v1`
 - `MARKDOWNS_PATH` — override the default location if needed
 
-## Suggested cron entries
+## Cron setup (Hermes cronjob system)
 
+The Hermes `cronjob` tool requires scripts under `~/.hermes/scripts/`. Copy the two wrapper scripts from this skill's `scripts/` directory:
+
+```bash
+cp scripts/cron-update-rag.sh ~/.hermes/scripts/sabbatical-update-rag.sh
+cp scripts/cron-update-index.sh ~/.hermes/scripts/sabbatical-update-index.sh
+chmod +x ~/.hermes/scripts/sabbatical-update-rag.sh ~/.hermes/scripts/sabbatical-update-index.sh
 ```
-0 6 * * * /Users/morticiamac/.hermes/skills/AgentSkills/sabbatical/scripts/update-rag
-5 6 * * * /Users/morticiamac/.hermes/skills/AgentSkills/sabbatical/scripts/update-index
-```
+
+Then create the cron jobs via `cronjob(action='create', ...)`:
+- **Sabbatical RAG Update**: `schedule='0 6 * * *'`, `script='sabbatical-update-rag.sh'`, `no_agent=true`
+- **Sabbatical Index Update**: `schedule='5 6 * * *'`, `script='sabbatical-update-index.sh'`, `no_agent=true`
+
+Use `deliver='local'` to avoid spamming the user. Note: `no_agent` script jobs may show `last_status: null` after running — this is a cosmetic tracking quirk; verify by running the wrapper scripts directly instead.
+
+## Insights directory
+
+`Insights/` contains cross-cutting insight documents synthesized from all meeting protocols and research notes. Each insight file has: title, short description, and verbatim quotes with clickable references to source documents. 13 insight themes (Innovationstempo, Fehlerkultur, Guanxi, SuperApps, etc.). When asked to analyze the knowledge base thematically, read these first before re-synthesizing from scratch. See `references/insights-overview.md` for the full list.
+
+To create new insights from the full corpus: (1) run `update-index` to ensure fresh index, (2) read all relevant source files via `read_file` (NOT `search --json` — too large), (3) identify recurring themes across documents, (4) create one `.md` per theme under `Insights/` with title, Kurzbeschreibung, and Zitate mit Referenzen, (5) run `update-index` afterward to index the new files.
+
+## Usage pitfalls
+
+- **Re-index after manual file creation**: `scripts/add-info` auto-triggers a re-index, but when you create or write files directly (e.g. into `Insights/`), you must run `scripts/update-index` afterward so the index and RAG pick them up.
+
+- **Search truncation**: `search --json` returns full file content per hit. With 10+ rich markdown files this routinely exceeds 50K chars and gets truncated. Pattern: use `--top-k N` (e.g. 5) for a scan, then `read_file` the specific files you need for complete content. Do not rely on search alone for comprehensive analysis.
+- **Memory budget**: Sabbatical session analysis can be token-heavy. When the agent's memory is near-full, compress or consolidate entries before adding sabbatical pointers.
 
 ## Requirements
 

@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AUDIO_TITLE</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  background: #0f172a; color: #e2e8f0;
+  min-height: 100vh;
+  padding: 0 0 120px 0;
+}
+header {
+  position: sticky; top: 0; z-index: 100;
+  background: linear-gradient(135deg, #1e3a5f, #0f172a);
+  padding: 16px 20px; border-bottom: 2px solid #3b82f6; text-align: center;
+}
+header h1 { font-size: 1.3rem; color: #f1f5f9; margin-bottom: 4px; }
+header .sub { font-size: 0.8rem; color: #94a3b8; }
+
+#player-bar {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 200;
+  background: #1e293b; border-top: 2px solid #3b82f6;
+  padding: 12px 16px; display: flex; flex-direction: column; gap: 8px;
+}
+#player-bar.hidden { display: none; }
+.player-top { display: flex; align-items: center; gap: 12px; }
+#current-label {
+  flex: 1; font-size: 0.9rem; font-weight: 600; color: #f1f5f9;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+#current-time {
+  font-size: 0.75rem; color: #94a3b8; min-width: 95px; text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.controls { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.ctrl-group {
+  display: flex; align-items: center; gap: 4px;
+  background: #334155; border-radius: 8px; padding: 4px 6px;
+}
+.btn {
+  border: none; border-radius: 8px; cursor: pointer;
+  font-size: 0.85rem; font-weight: 600; color: #f1f5f9;
+  background: #475569; padding: 8px 14px; transition: background .15s;
+  white-space: nowrap; user-select: none; -webkit-tap-highlight-color: transparent;
+}
+.btn:hover { background: #64748b; }
+.btn:active { background: #3b82f6; }
+.btn.play-btn { background: #3b82f6; padding: 10px 20px; font-size: 1rem; }
+.btn.play-btn:hover { background: #2563eb; }
+.btn.play-btn.playing { background: #ef4444; }
+.btn.skip-btn { background: #334155; padding: 8px 10px; font-size: 0.8rem; }
+.btn.skip-btn:hover { background: #475569; }
+.skip-label { font-size: 0.7rem; color: #94a3b8; margin: 0 2px; }
+
+#track-list { padding: 12px 16px; max-width: 700px; margin: 0 auto; }
+.lesson-group { margin-bottom: 8px; }
+.lesson-header {
+  background: #1e3a5f; padding: 10px 16px; border-radius: 10px;
+  font-weight: 700; font-size: 0.95rem; cursor: pointer;
+  display: flex; justify-content: space-between; align-items: center;
+  border: 1px solid #334155; margin-bottom: 4px;
+}
+.lesson-header:hover { background: #1e4a7f; }
+.lesson-header .arrow { font-size: 0.8rem; transition: transform .2s; }
+.lesson-group.collapsed .lesson-tracks { display: none; }
+.lesson-group.collapsed .arrow { transform: rotate(-90deg); }
+.lesson-tracks { display: flex; flex-direction: column; gap: 2px; padding-left: 8px; }
+
+.track-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; border-radius: 10px; cursor: pointer;
+  transition: background .12s; border: 1px solid transparent;
+}
+.track-item:hover { background: #1e293b; border-color: #334155; }
+.track-item.active { background: #1e3a5f; border-color: #3b82f6; }
+.track-num { font-weight: 700; color: #3b82f6; min-width: 48px; font-size: 0.85rem; }
+.track-name { flex: 1; font-size: 0.9rem; color: #cbd5e1; }
+.track-dur { font-size: 0.75rem; color: #64748b; min-width: 55px; text-align: right; }
+.track-play-icon { font-size: 1.1rem; width: 24px; text-align: center; }
+
+#progress-wrap {
+  width: 100%; height: 4px; background: #334155; border-radius: 2px;
+  cursor: pointer; position: relative;
+}
+#progress-fill {
+  height: 100%; background: #3b82f6; border-radius: 2px;
+  width: 0%; transition: width .1s linear;
+}
+.vol-wrap { display: flex; align-items: center; gap: 4px; }
+#volume-slider { width: 60px; accent-color: #3b82f6; }
+
+#seek-toast {
+  position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+  background: rgba(59,130,246,0.9); color: #fff; padding: 10px 20px;
+  border-radius: 20px; font-weight: 700; font-size: 1rem;
+  pointer-events: none; opacity: 0; transition: opacity .15s; z-index: 300;
+}
+#seek-toast.show { opacity: 1; }
+
+@media (max-width: 500px) {
+  .btn { padding: 6px 10px; font-size: 0.78rem; }
+  .btn.play-btn { padding: 8px 14px; font-size: 0.9rem; }
+  .btn.skip-btn { padding: 6px 8px; }
+  .controls { gap: 4px; }
+  .ctrl-group { gap: 2px; padding: 3px 4px; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>AUDIO_TITLE</h1>
+  <div class="sub">TRACK_COUNT Audio-Tracks · Play, Pause, Skip SKIP_LABELS</div>
+</header>
+
+<div id="track-list"></div>
+
+<div id="player-bar" class="hidden">
+  <div id="progress-wrap" onclick="seek(event)"><div id="progress-fill"></div></div>
+  <div class="player-top">
+    <span id="current-label">—</span>
+    <span id="current-time">0:00 / 0:00</span>
+  </div>
+  <div class="controls">
+    <button class="btn skip-btn" onclick="skip(-10)" title="−10s">⏪10</button>
+    <button class="btn skip-btn" onclick="skip(-5)" title="−5s">⏪5</button>
+    <button class="btn skip-btn" onclick="skip(-2)" title="−2s">⏪2</button>
+    <button id="play-btn" class="btn play-btn" onclick="togglePlay()">▶ Play</button>
+    <button class="btn skip-btn" onclick="skip(2)" title="+2s">2⏩</button>
+    <button class="btn skip-btn" onclick="skip(5)" title="+5s">5⏩</button>
+    <button class="btn skip-btn" onclick="skip(10)" title="+10s">10⏩</button>
+    <span class="skip-label" style="margin-left:6px">🔊</span>
+    <input type="range" id="volume-slider" min="0" max="100" value="80" oninput="setVolume(this.value)">
+  </div>
+</div>
+
+<div id="seek-toast"></div>
+
+<script>
+// TRACK_DATA_PLACEHOLDER — replace with your track array:
+// Each track: {file:"filename.mp3", label:"01", lesson:1, name:"Display Name"}
+const tracks = TRACKS_JSON;
+
+const audio = new Audio();
+let currentIdx = -1;
+let toastTimer = null;
+
+const bar = document.getElementById('player-bar');
+const playBtn = document.getElementById('play-btn');
+const label = document.getElementById('current-label');
+const timeEl = document.getElementById('current-time');
+const progressFill = document.getElementById('progress-fill');
+const toast = document.getElementById('seek-toast');
+audio.volume = 0.8;
+
+// GROUP_LABELS_PLACEHOLDER — replace with your lesson/group names:
+// e.g. {intro:"🎬 Intro", 1:"📖 Chapter 1", ...}
+const groupLabels = GROUP_LABELS;
+
+// GROUP_ORDER_PLACEHOLDER — replace with the display order of group keys:
+// e.g. ['intro', 1, 2, 3, ...]
+const groupOrder = GROUP_ORDER;
+
+// Build track list grouped
+const list = document.getElementById('track-list');
+const groups = {};
+tracks.forEach((t, i) => {
+  const key = t.lesson;
+  if (!groups[key]) groups[key] = [];
+  groups[key].push({...t, idx: i});
+});
+
+groupOrder.forEach(key => {
+  const items = groups[key];
+  if (!items) return;
+  const div = document.createElement('div');
+  div.className = 'lesson-group' + (key === groupOrder[0] ? '' : '');
+  div.innerHTML = `
+    <div class="lesson-header" onclick="this.parentElement.classList.toggle('collapsed')">
+      <span>${groupLabels[key] || 'Group '+key} (${items.length})</span>
+      <span class="arrow">▼</span>
+    </div>
+    <div class="lesson-tracks"></div>
+  `;
+  const tc = div.querySelector('.lesson-tracks');
+  items.forEach(t => {
+    const el = document.createElement('div');
+    el.className = 'track-item';
+    el.id = 'track-' + t.idx;
+    el.innerHTML = `
+      <span class="track-play-icon">▶️</span>
+      <span class="track-num">${t.label}</span>
+      <span class="track-name">${t.name}</span>
+      <span class="track-dur">--:--</span>
+    `;
+    el.onclick = () => playTrack(t.idx);
+    tc.appendChild(el);
+  });
+  list.appendChild(div);
+});
+
+function playTrack(idx) {
+  if (currentIdx === idx) { togglePlay(); return; }
+  currentIdx = idx;
+  audio.src = tracks[idx].file;
+  audio.play().catch(e => console.log('play error', e));
+  updateUI();
+  bar.classList.remove('hidden');
+}
+
+function togglePlay() {
+  if (currentIdx < 0) return;
+  audio.paused ? audio.play() : audio.pause();
+  updateUI();
+}
+
+// Mute briefly before seeking to avoid audible glitch/pop ("gong")
+function skip(sec) {
+  if (currentIdx < 0 || !audio.duration) return;
+  audio.muted = true;
+  audio.currentTime = Math.max(0, Math.min(audio.duration, audio.currentTime + sec));
+  requestAnimationFrame(() => { audio.muted = false; });
+  showToast((sec > 0 ? '+' : '') + sec + 's');
+}
+
+function setVolume(v) { audio.volume = v / 100; }
+
+function showToast(msg) {
+  toast.textContent = msg;
+  toast.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove('show'), 600);
+}
+
+function seek(e) {
+  if (currentIdx < 0 || !audio.duration) return;
+  const pct = (e.clientX - e.target.getBoundingClientRect().left) / e.target.getBoundingClientRect().width;
+  audio.muted = true;
+  audio.currentTime = pct * audio.duration;
+  requestAnimationFrame(() => { audio.muted = false; });
+}
+
+function fmtTime(s) {
+  if (isNaN(s)) return '0:00';
+  return Math.floor(s/60) + ':' + String(Math.floor(s%60)).padStart(2,'0');
+}
+
+function updateUI() {
+  if (currentIdx < 0) return;
+  const t = tracks[currentIdx];
+  label.textContent = t.label + ' ' + t.name;
+  document.querySelectorAll('.track-item').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.track-play-icon').forEach(el => el.textContent = '▶️');
+  const ae = document.getElementById('track-' + currentIdx);
+  if (ae) { ae.classList.add('active'); ae.querySelector('.track-play-icon').textContent = audio.paused ? '⏸️' : '🔊'; }
+  playBtn.textContent = audio.paused ? '▶ Play' : '⏸ Pause';
+  playBtn.classList.toggle('playing', !audio.paused);
+}
+
+audio.addEventListener('timeupdate', () => {
+  if (currentIdx < 0) return;
+  progressFill.style.width = (audio.duration ? audio.currentTime / audio.duration * 100 : 0) + '%';
+  timeEl.textContent = fmtTime(audio.currentTime) + ' / ' + fmtTime(audio.duration);
+});
+
+audio.addEventListener('loadedmetadata', () => {
+  if (currentIdx >= 0) {
+    const el = document.getElementById('track-' + currentIdx);
+    if (el) el.querySelector('.track-dur').textContent = fmtTime(audio.duration);
+    timeEl.textContent = '0:00 / ' + fmtTime(audio.duration);
+  }
+});
+
+audio.addEventListener('ended', () => {
+  if (currentIdx < tracks.length - 1) playTrack(currentIdx + 1);
+  else updateUI();
+});
+
+audio.addEventListener('play', updateUI);
+audio.addEventListener('pause', updateUI);
+
+// Keyboard: Space=play/pause, ←→=skip 2s, Alt+←→=5s, Shift+←→=10s
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  switch(e.key) {
+    case ' ': e.preventDefault(); togglePlay(); break;
+    case 'ArrowLeft': e.preventDefault(); skip(e.shiftKey ? -10 : e.altKey ? -5 : -2); break;
+    case 'ArrowRight': e.preventDefault(); skip(e.shiftKey ? 10 : e.altKey ? 5 : 2); break;
+  }
+});
+</script>
+</body>
+</html>
