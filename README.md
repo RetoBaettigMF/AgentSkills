@@ -159,4 +159,12 @@ Lädt YouTube-Videos als MP3-Audiodateien herunter (192 kbps) via `yt-dlp` und `
 
 ---
 
+### [zefix](zefix/)
+
+Offizielle Handelsregisterdaten Schweizer Firmen über die Zefix Public REST API des Bundes. Liefert Stammdaten, Kapital, Firmenzweck, Revisionsstelle, frühere Firmennamen und SHAB-Publikationen. Ergänzt `moneyhouse`, das dafür Mitarbeiterzahlen und Umsätze hat.
+
+**Trigger:** UID/CHE-Nummer, Handelsregistereintrag, Aktienkapital, Firmenzweck, Revisionsstelle, Zweigniederlassungen, SHAB-Publikationen
+
+---
+
 Weitere Informationen zum AgentSkills-Standard findest du unter: https://agentskills.io/

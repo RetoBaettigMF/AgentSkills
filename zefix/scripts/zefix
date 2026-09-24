@@ -1,0 +1,420 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#   "requests",
+# ]
+# ///
+"""
+Zefix CLI
+
+Abfrage des Schweizerischen Handelsregisters (Zefix Public REST API).
+Liefert Handelsregisterdaten zu Schweizer Firmen: Stammdaten, Adresse,
+Kapital, Zweck, frühere Firmennamen und SHAB-Publikationen.
+"""
+
+import argparse
+import html
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+import requests
+
+BASE_URL = "https://www.zefix.admin.ch/ZefixPublicREST"
+DEFAULT_TIMEOUT = 30
+
+
+# ---------------------------------------------------------------- Hilfsmittel
+
+def load_env() -> None:
+    """Lädt scripts/.env in os.environ, ohne bestehende Variablen zu überschreiben."""
+    env_file = Path(__file__).resolve().parent / ".env"
+    if not env_file.is_file():
+        return
+    for line in env_file.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        os.environ.setdefault(key.strip(), value.strip().strip("'\""))
+
+
+def credentials() -> tuple[str, str]:
+    load_env()
+    user = os.environ.get("ZEFIX_USER")
+    password = os.environ.get("ZEFIX_PASS")
+    if not user or not password:
+        sys.exit(
+            "Fehler: ZEFIX_USER und ZEFIX_PASS nicht gesetzt.\n"
+            "Lege scripts/.env an (Vorlage: .env.example). Zugang: "
+            "https://www.zefix.admin.ch -> Webservices/API (kostenlos, manuelle Freischaltung)."
+        )
+    return user, password
+
+
+def request(method: str, path: str, **kwargs):
+    """Führt einen API-Call aus und behandelt die typischen Fehlerfälle."""
+    try:
+        response = requests.request(
+            method,
+            f"{BASE_URL}{path}",
+            auth=credentials(),
+            headers={"Accept": "application/json"},
+            timeout=DEFAULT_TIMEOUT,
+            **kwargs,
+        )
+    except requests.RequestException as exc:
+        sys.exit(f"Netzwerkfehler: {exc}")
+
+    if response.status_code == 401:
+        sys.exit(
+            "Fehler 401: Zugangsdaten abgelehnt.\n"
+            "Moegliche Ursachen: Account noch nicht freigeschaltet (Zefix schaltet "
+            "manuell frei, dauert einige Werktage), abweichender technischer "
+            "Benutzername oder Tippfehler im Passwort."
+        )
+    if response.status_code == 404:
+        return None
+    if not response.ok:
+        sys.exit(f"Fehler {response.status_code}: {response.text[:400]}")
+    if not response.content:
+        return None
+    return response.json()
+
+
+def normalize_id(value: str) -> tuple[str, str]:
+    """Erkennt UID / CHID / EHRAID und normalisiert die Schreibweise.
+
+    Akzeptiert 'CHE-100.618.212' ebenso wie 'CHE100618212'.
+    """
+    cleaned = re.sub(r"[\s.\-]", "", value).upper()
+    if cleaned.startswith("CHE"):
+        return "uid", cleaned
+    if cleaned.startswith("CH"):
+        return "chid", cleaned
+    if cleaned.isdigit():
+        return "ehraid", cleaned
+    sys.exit(f"Unbekanntes ID-Format: {value!r} (erwartet UID, CHID oder EHRAID)")
+
+
+def format_uid(uid: str | None) -> str:
+    """CHE100618212 -> CHE-100.618.212"""
+    if not uid or not re.fullmatch(r"CHE\d{9}", uid):
+        return uid or "-"
+    return f"CHE-{uid[3:6]}.{uid[6:9]}.{uid[9:]}"
+
+
+def strip_markup(text: str) -> str:
+    """Entfernt das <FT TYPE="...">-Markup aus SHAB-Meldungen."""
+    text = re.sub(r"</?FT[^>]*>", "", text)
+    return re.sub(r"\s+", " ", html.unescape(text)).strip()
+
+
+def dfie(value, lang: str = "de") -> str:
+    """Liest einen DFIEString (de/fr/it/en) in der gewuenschten Sprache."""
+    if isinstance(value, dict):
+        return value.get(lang) or value.get("de") or "-"
+    return value or "-"
+
+
+def emit_json(data) -> None:
+    print(json.dumps(data, ensure_ascii=False, indent=2))
+
+
+# ------------------------------------------------------------------- Ausgaben
+
+def print_search_results(results: list, lang: str) -> None:
+    if not results:
+        print("Keine Treffer.")
+        return
+    print(f"{len(results)} Treffer\n")
+    for item in results:
+        status = item.get("status", "-")
+        marker = "" if status == "ACTIVE" else f"  [{status}]"
+        print(f"  {item.get('name', '-')}{marker}")
+        print(f"    UID          {format_uid(item.get('uid'))}")
+        print(f"    Rechtsform   {dfie(item.get('legalForm', {}).get('name'), lang)}")
+        print(f"    Sitz         {item.get('legalSeat', '-')}")
+        if item.get("deletionDate"):
+            print(f"    Geloescht    {item['deletionDate']}")
+        print(f"    SHAB         {item.get('sogcDate', '-')}")
+        print()
+
+
+def print_company(company: dict, lang: str, publications: int) -> None:
+    """Gibt einen CompanyFull-Datensatz lesbar aus.
+
+    Leere Felder liefert die API nicht mit, statt sie auf null zu setzen --
+    daher durchgehend .get() statt Indexzugriff.
+    """
+    print("=" * 72)
+    print(company.get("name", "-"))
+    print("=" * 72)
+
+    rows = [
+        ("UID", format_uid(company.get("uid"))),
+        ("CHID", company.get("chid")),
+        ("EHRAID", company.get("ehraid")),
+        ("Status", company.get("status")),
+        ("Rechtsform", dfie(company.get("legalForm", {}).get("name"), lang)),
+        ("Sitz", company.get("legalSeat")),
+        ("Kanton", company.get("canton")),
+    ]
+
+    address = company.get("address") or {}
+    if address:
+        street = " ".join(
+            part for part in [address.get("street"), address.get("houseNumber")] if part
+        )
+        city = " ".join(
+            part for part in [address.get("swissZipCode"), address.get("city")] if part
+        )
+        rows.append(("Adresse", ", ".join(part for part in [street, city] if part)))
+        for label, key in (("  c/o", "careOf"), ("  Zusatz", "addon"), ("  Postfach", "poBox")):
+            if address.get(key):
+                rows.append((label, address[key]))
+
+    if company.get("capitalNominal"):
+        capital = f"{company.get('capitalCurrency', '')} {company['capitalNominal']}".strip()
+        rows.append(("Kapital", capital))
+    if company.get("deletionDate"):
+        rows.append(("Geloescht", company["deletionDate"]))
+    rows.append(("Letzte SHAB", company.get("sogcDate")))
+
+    for label, value in rows:
+        if value not in (None, "", []):
+            print(f"  {label:14} {value}")
+
+    if company.get("oldNames"):
+        print("\n  Frühere Firmennamen")
+        for old in sorted(company["oldNames"], key=lambda x: -x.get("sequenceNr", 0)):
+            print(f"    - {old.get('name')}")
+
+    # Alle Verflechtungsfelder sind array[CompanyShort] und oft unbefuellt.
+    relations = [
+        ("Revisionsstelle", "auditCompanies"),
+        ("Zweigniederlassungen", "branchOffices"),
+        ("Hauptsitze", "headOffices"),
+        ("Weitere Hauptsitze", "furtherHeadOffices"),
+        ("Uebernommen", "hasTakenOver"),
+        ("Uebernommen von", "wasTakenOverBy"),
+    ]
+    for label, key in relations:
+        entries = company.get(key) or []
+        if not entries:
+            continue
+        print(f"\n  {label}")
+        for entry in entries:
+            print(
+                f"    - {entry.get('name')} "
+                f"({format_uid(entry.get('uid'))}, {entry.get('legalSeat', '-')})"
+            )
+
+    if company.get("purpose"):
+        print("\n  Zweck")
+        print(f"    {company['purpose']}")
+
+    links = []
+    if company.get("cantonalExcerptWeb"):
+        links.append(("Kantonsauszug", company["cantonalExcerptWeb"]))
+    if company.get("zefixDetailWeb"):
+        links.append(("Zefix", dfie(company["zefixDetailWeb"], lang)))
+    if links:
+        print("\n  Links")
+        for label, url in links:
+            print(f"    {label:14} {url}")
+
+    pubs = company.get("sogcPub") or []
+    if pubs and publications:
+        shown = pubs[:publications]
+        print(f"\n  SHAB-Publikationen ({len(shown)} von {len(pubs)})")
+        for pub in shown:
+            types = ", ".join(t.get("key", "") for t in pub.get("mutationTypes") or [])
+            print(f"\n    {pub.get('sogcDate')}  [{types or 'ohne Mutationstyp'}]")
+            for line in wrap(strip_markup(pub.get("message", "")), 66):
+                print(f"      {line}")
+    elif pubs:
+        print(f"\n  SHAB-Publikationen: {len(pubs)} (mit --publications N anzeigen)")
+    print()
+
+
+def wrap(text: str, width: int) -> list[str]:
+    lines, current = [], ""
+    for word in text.split():
+        if current and len(current) + 1 + len(word) > width:
+            lines.append(current)
+            current = word
+        else:
+            current = f"{current} {word}".strip()
+    if current:
+        lines.append(current)
+    return lines
+
+
+# ------------------------------------------------------------------ Kommandos
+
+def cmd_search(args) -> None:
+    query = {"name": args.name}
+    if args.active_only:
+        query["activeOnly"] = True
+    if args.canton:
+        query["canton"] = args.canton.upper()
+    if args.legal_form_id:
+        query["legalFormId"] = args.legal_form_id
+    if args.legal_seat_id:
+        query["legalSeatId"] = args.legal_seat_id
+
+    results = request("POST", "/api/v1/company/search", json=query) or []
+    if args.json:
+        emit_json(results)
+    else:
+        print_search_results(results, args.lang)
+
+
+def cmd_company(args) -> None:
+    kind, value = normalize_id(args.id)
+    result = request("GET", f"/api/v1/company/{kind}/{value}")
+    if not result:
+        sys.exit(f"Keine Firma gefunden zu {args.id} ({kind}={value}).")
+
+    company = result[0] if isinstance(result, list) else result
+
+    # Die Verflechtungsfelder der API sind unzuverlaessig: Zweigniederlassungen
+    # fehlen oft in branchOffices und headOffices bleibt auf der ZN leer.
+    # --related stellt den Bezug ueber die Namenssuche her.
+    if args.related:
+        base = re.split(r",| Zweigniederlassung", company.get("name", ""))[0].strip()
+        found = request("POST", "/api/v1/company/search", json={"name": base}) or []
+        siblings = [c for c in found if c.get("uid") != company.get("uid")]
+        if siblings:
+            company = dict(company)
+            company["_verwandteFirmen"] = siblings
+
+    if args.json:
+        emit_json(company)
+        return
+
+    print_company(company, args.lang, args.publications)
+
+    siblings = company.get("_verwandteFirmen") or []
+    if siblings:
+        print("  Verwandte Firmen (ueber Namenssuche ermittelt)")
+        for sibling in siblings:
+            print(
+                f"    - {sibling.get('name')} "
+                f"({format_uid(sibling.get('uid'))}, {sibling.get('legalSeat', '-')}, "
+                f"{sibling.get('status', '-')})"
+            )
+        print()
+
+
+def cmd_legalforms(args) -> None:
+    forms = request("GET", "/api/v1/legalForm") or []
+    if args.json:
+        emit_json(forms)
+        return
+    for form in forms:
+        print(
+            f"  {str(form.get('id')):>4}  {dfie(form.get('shortName'), args.lang):<6} "
+            f"{dfie(form.get('name'), args.lang)}"
+        )
+
+
+def cmd_sogc(args) -> None:
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", args.target):
+        data = request("GET", f"/api/v1/sogc/bydate/{args.target}")
+    else:
+        data = request("GET", f"/api/v1/sogc/{args.target}")
+    data = data or []
+    if args.json:
+        emit_json(data)
+        return
+
+    entries = data if isinstance(data, list) else [data]
+    total = len(entries)
+    if args.limit:
+        entries = entries[: args.limit]
+    suffix = f" (zeige {len(entries)})" if len(entries) < total else ""
+    print(f"{total} Publikation(en){suffix}\n")
+
+    for entry in entries:
+        # /sogc/bydate liefert {companyShort, sogcPublication}, /sogc/{id}
+        # die Publikation direkt.
+        pub = entry.get("sogcPublication", entry)
+        company = entry.get("companyShort") or {}
+        types = ", ".join(t.get("key", "") for t in pub.get("mutationTypes") or [])
+        header = f"  {pub.get('sogcDate')}  [{types or '-'}]  SOGC-ID {pub.get('sogcId')}"
+        print(header)
+        if company:
+            print(f"    {company.get('name')}  {format_uid(company.get('uid'))}")
+        for line in wrap(strip_markup(pub.get("message", "")), 68):
+            print(f"    {line}")
+        print()
+
+
+# ----------------------------------------------------------------------- Main
+
+def main() -> None:
+    # Gemeinsame Flags als Parent, damit sie vor UND nach dem Subkommando
+    # akzeptiert werden: `zefix --json company X` wie `zefix company X --json`.
+    # SUPPRESS ist noetig, weil der Subparser sonst mit seinem eigenen Default
+    # ueberschreibt, was der Hauptparser schon gesetzt hat.
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument(
+        "--json", action="store_true", default=argparse.SUPPRESS,
+        help="Rohes JSON ausgeben",
+    )
+    common.add_argument(
+        "--lang", choices=["de", "fr", "it", "en"], default=argparse.SUPPRESS,
+        help="Sprache mehrsprachiger Felder (Standard: de)",
+    )
+
+    parser = argparse.ArgumentParser(
+        prog="zefix",
+        parents=[common],
+        description="Schweizer Handelsregister (Zefix Public REST API) abfragen.",
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    p_search = sub.add_parser("search", parents=[common], help="Firmen nach Namen suchen")
+    p_search.add_argument("name", help='Firmenname, z.B. "Cudos AG"')
+    p_search.add_argument("--active-only", action="store_true", help="Nur aktive Firmen")
+    p_search.add_argument("--canton", help="Kanton, z.B. ZH (nicht mit --legal-seat-id)")
+    p_search.add_argument("--legal-form-id", type=int, help="Rechtsform-ID (siehe legalforms)")
+    p_search.add_argument("--legal-seat-id", type=int, help="Gemeinde-ID des Sitzes")
+    p_search.set_defaults(func=cmd_search)
+
+    p_company = sub.add_parser("company", parents=[common], help="Volldatensatz zu UID / CHID / EHRAID")
+    p_company.add_argument("id", help="CHE-100.618.212, CHE100618212, CH0203... oder 192809")
+    p_company.add_argument(
+        "--publications", type=int, default=0, metavar="N",
+        help="N SHAB-Publikationen im Volltext anzeigen (Standard: 0)",
+    )
+    p_company.add_argument(
+        "--related", action="store_true",
+        help="Zweigniederlassungen/Hauptsitz ueber Namenssuche ergaenzen",
+    )
+    p_company.set_defaults(func=cmd_company)
+
+    p_forms = sub.add_parser("legalforms", parents=[common], help="Rechtsformen mit IDs auflisten")
+    p_forms.set_defaults(func=cmd_legalforms)
+
+    p_sogc = sub.add_parser("sogc", parents=[common], help="SHAB-Publikationen nach Datum oder ID")
+    p_sogc.add_argument("target", help="Datum YYYY-MM-DD oder SOGC-ID")
+    p_sogc.add_argument(
+        "--limit", type=int, default=20, metavar="N",
+        help="Nur die ersten N Publikationen anzeigen (0 = alle, Standard: 20)",
+    )
+    p_sogc.set_defaults(func=cmd_sogc)
+
+    args = parser.parse_args()
+    args.json = getattr(args, "json", False)
+    args.lang = getattr(args, "lang", "de")
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()
